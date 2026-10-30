@@ -1,10 +1,10 @@
 # Sprint 06 — Fase D2: Playwright E2E e observabilidade CI
 
-Data: 2026-10-30. Implementação e revalidação local após as correções concluídas.
-Este relatório registra o estado anterior à publicação controlada autorizada.
-GitHub Actions desta fase: **NOT RUN** neste registro; resultado remoto será
-verificado após o único commit/push autorizado. As seções anteriores à última
-revalidação preservam o histórico das rodadas locais.
+Data: 2026-10-30. Implementação publicada e execução remota
+**41067075376: FAIL**. Correção posterior do isolamento do teste validada somente
+localmente, sem staging, commit ou push nesta rodada. Uma nova execução remota
+completa continua obrigatória antes da aprovação da D2. As seções anteriores à
+última correção preservam o histórico das rodadas locais e da publicação.
 
 ## Baseline, inspeção e problemas encontrados
 
@@ -419,3 +419,97 @@ checkpoint manual, mudança de hooks ou sincronização forçada foi executado.
 do staged diff, a publicação autorizada deve incluir somente os 13 arquivos D2,
 preservando os hooks Entire. O sucesso local permite prosseguir com essa publicação;
 o encerramento da D2 depende dos dez jobs no GitHub Actions. Não iniciar a Fase E.
+
+## Correção local do isolamento do teste — após execução remota
+
+Baseline desta rodada: `develop`, HEAD
+`ef547b4ab61512974c8efb38c2026f78b58df938`, working tree inicialmente limpa.
+A execução [41067075376](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41067075376)
+terminou em FAIL: oito jobs aprovados, `observability-integration` e `ci-required`
+reprovados. O teste real de observabilidade não iniciou no runner remoto.
+
+Causa confirmada antes de modificar o teste: `run_entrypoint` copiava todo
+`os.environ` para o subprocesso. O teste
+`test_unexpected_failure_diagnostic_redacts_project_password` constrói
+`IntegrationProject('e2e', [])`, mas herdava o nome
+`infrapulse-observability-41067075376-1` do job. A guarda corretamente rejeitou
+o prefixo incompatível com `ValueError: Unexpected disposable project name`,
+antes de gerar a credencial e o diagnóstico esperado. Os dois subcasos afetados
+são `validate-dashboard.py` e `validate-observability.py`, no mesmo método de teste.
+
+Reprodução anterior à correção, sem Docker:
+
+```bash
+INFRAPULSE_TEST_PROJECT=infrapulse-observability-41067075376-1 \
+GITHUB_ACTIONS=true python3 scripts/test_integration_support.py \
+  EntrypointStatusTests.test_unexpected_failure_diagnostic_redacts_project_password
+```
+
+Resultado: FAIL esperado, código 1, um método com dois subcasos falhando por
+ausência de `preserved diagnostic`; evidência em
+`/tmp/infrapulse-s06d2-isolation-red.log`. A guarda de segurança funcionou;
+o defeito está na herança de ambiente do teste, não na validação de produção.
+
+Correção aplicada somente em `scripts/test_integration_support.py`: o helper
+`run_entrypoint` passou a fornecer um dicionário de ambiente explícito com apenas
+`INFRAPULSE_TEST_PROJECT=infrapulse-e2e-unit` e `GITHUB_ACTIONS=false`, em vez de
+copiar o ambiente do processo pai. O interpretador é chamado pelo caminho absoluto
+de `sys.executable`; esses cenários não precisam de PATH, HOME, variáveis CI ou
+credenciais herdadas. CPython pode acrescentar `LC_CTYPE` na inicialização para
+coerção de locale; a regressão reconhece somente essa adição do runtime.
+Não há alteração global de `os.environ` na correção.
+
+Foram adicionados dois métodos de regressão: um inspeciona o ambiente efetivo do
+filho nos dois entrypoints, rejeita chaves adicionais e compara o ambiente do pai
+antes/depois; outro instancia a classe real em subprocessos fora do helper
+sintético e comprova que um projeto válido passa, enquanto prefixo de
+observabilidade, nome sem prefixo e nome com maiúsculas continuam rejeitados.
+Os 20 testes anteriores, incluindo códigos de saída, sinais, coleta, cleanup e
+mascaramento de credencial gerada, permanecem preservados.
+
+Red-green: com os dois métodos novos e antes da troca do ambiente, a suíte de
+22 testes falhou em quatro subcasos no ambiente CI. Após a correção, os mesmos
+22 testes passaram em cada uma das cinco configurações abaixo (110 execuções de
+métodos no total), sempre sem Docker:
+
+| Ambiente do processo de testes | Resultado após correção |
+| --- | --- |
+| Ambiente vazio; INFRAPULSE_TEST_PROJECT ausente | PASS — 22 testes, 2,613 s |
+| Projeto válido infrapulse-e2e-parent-valid | PASS — 22 testes, 2,679 s |
+| CI observabilidade: infrapulse-observability-41067075376-1 | PASS — 22 testes, 2,514 s |
+| Projeto inválido jc-infrapulse | PASS — 22 testes, 2,185 s; guarda direta rejeita o nome |
+| CI Playwright: infrapulse-e2e-41067075376-1 | PASS — 22 testes, 2,396 s |
+
+Os ambientes equivalentes ao CI incluem `CI=true`, `GITHUB_ACTIONS=true`, run ID,
+run attempt, RUNNER_TEMP, três senhas exclusivamente sintéticas e uma variável
+sentinela. O teste confirma que nenhuma dessas entradas extras alcança o filho
+sintético e que o pai permanece inalterado. O teste de mascaramento confirma
+diagnóstico útil, saída não zero e ausência da credencial gerada no stderr.
+O nome inválido no ambiente externo não é aceito pela classe real; o sucesso da
+suíte ocorre porque somente o subprocesso sintético recebe um nome válido explícito.
+
+Validações adicionais: Ruff check, Ruff format --check (sete scripts Python),
+actionlint, ShellCheck e git diff --check: **PASS**. Workflow, produção,
+`integration_support.py`, SSRF, Dockerfiles, Compose e configuração Entire não
+foram alterados. Docker e nova execução GitHub Actions: **NOT RUN** nesta rodada.
+
+Evidências red: `/tmp/infrapulse-s06d2-isolation-red.log` e
+`/tmp/infrapulse-s06d2-isolation-red-suite.log`. Evidências green:
+`/tmp/infrapulse-s06d2-isolation-bfn9n05s/{clean-absent,valid-project,ci-observability,invalid-project,ci-playwright}.log`
+e `results.json` no mesmo diretório. A matriz foi executada com
+`subprocess.run([sys.executable, 'scripts/test_integration_support.py'], env=...)`,
+substituindo integralmente o ambiente de cada processo de testes, sem modificar
+o ambiente global do processo que orquestra as execuções.
+
+Estado desta rodada: branch e HEAD preservados no baseline; somente o teste e
+este relatório modificados, nada staged. Entire permanece habilitado, doctor sem
+sessões presas ou falhas nos hooks. `status` voltou a indicar um checkpoint D2
+pendente (`01M66HBTQ3KB1YWV8QM5RY8HV9`); o push anterior havia sincronizado os
+checkpoints, portanto este é o estado local observado posteriormente, sem nova
+tentativa de sincronização. Não houve checkpoint manual, repair ou alterações
+de hooks/configuração.
+
+Recomendação: pronta para nova revisão e autorização de um commit separado,
+seguido de validação remota completa dos dez jobs. Esta correção não aprova a D2
+remotamente e não inicia a Fase E. Conventional Commit sugerido, sem executar:
+`test(ci): isolate integration validator subprocess environment`.

@@ -137,12 +137,62 @@ class EntrypointStatusTests(unittest.TestCase):
         )
         return subprocess.run(
             [sys.executable, "-c", probe],
-            env=os.environ | {"GITHUB_ACTIONS": "false"},
+            # Synthetic subprocesses must not inherit the CI Compose project or secrets.
+            env={
+                "INFRAPULSE_TEST_PROJECT": "infrapulse-e2e-unit",
+                "GITHUB_ACTIONS": "false",
+            },
             capture_output=True,
             text=True,
             check=False,
             timeout=10,
         )
+
+    def test_entrypoint_subprocess_environment_is_isolated(self) -> None:
+        before = dict(os.environ)
+        for script in ["validate-dashboard.py", "validate-observability.py"]:
+            with self.subTest(script=script):
+                result = self.run_entrypoint(
+                    script,
+                    "import os\n"
+                    "assert os.environ['INFRAPULSE_TEST_PROJECT'] == 'infrapulse-e2e-unit'\n"
+                    "assert os.environ['GITHUB_ACTIONS'] == 'false'\n"
+                    # CPython may add LC_CTYPE during locale coercion at startup.
+                    "assert set(os.environ) <= "
+                    "{'INFRAPULSE_TEST_PROJECT', 'GITHUB_ACTIONS', 'LC_CTYPE'}\n"
+                    "print('isolated environment')",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("isolated environment", result.stdout)
+        self.assertEqual(dict(os.environ), before)
+
+    def test_project_guard_outside_synthetic_environment(self) -> None:
+        scripts = Path(__file__).resolve().parent
+        probe = (
+            f"import sys; sys.path.insert(0, {str(scripts)!r})\n"
+            "from integration_support import IntegrationProject\n"
+            "IntegrationProject('e2e', [])"
+        )
+        for name, valid in [
+            ("infrapulse-e2e-valid", True),
+            ("infrapulse-observability-41067075376-1", False),
+            ("jc-infrapulse", False),
+            ("infrapulse-e2e-INVALID", False),
+        ]:
+            with self.subTest(project=name):
+                result = subprocess.run(
+                    [sys.executable, "-c", probe],
+                    env={"INFRAPULSE_TEST_PROJECT": name, "GITHUB_ACTIONS": "false"},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                if valid:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Unexpected disposable project name", result.stderr)
 
     def test_numeric_exit_statuses(self) -> None:
         for script in ["validate-dashboard.py", "validate-observability.py"]:
