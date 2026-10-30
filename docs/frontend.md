@@ -127,10 +127,14 @@ python3 scripts/validate-dashboard.py
 
 O script cria um projeto Compose com nome exclusivo, senhas efêmeras em memória,
 PostgreSQL em tmpfs, migrações reais, API, worker, destino HTTP controlado e Nginx.
-A porta 8080 precisa estar livre; o script recusa prosseguir se estiver ocupada.
+O Docker atribui uma porta livre em loopback para o Nginx; o script descobre essa
+porta e fornece `E2E_BASE_URL` ao Playwright. Não exige uma branch específica.
 Nenhum `.env` do desenvolvimento é utilizado. Ao terminar, inclusive em falhas,
 apenas os recursos do projeto descartável são removidos, e os IDs dos containers
 de desenvolvimento são comparados com o estado inicial.
+Execute os validadores Docker sequencialmente no mesmo host: criar/remover outra
+rede durante os testes pode causar `ERR_NETWORK_CHANGED` no Chromium. No CI,
+Playwright e observabilidade usam runners independentes.
 
 O seed exige a flag de E2E e o destino exato `test-db/infrapulse_test`; cria 24
 serviços inativos e 25 checks determinísticos. Separadamente, o Playwright cria um

@@ -339,7 +339,7 @@ cd ..
 python3 scripts/validate-dashboard.py
 ```
 
-O E2E exige a porta 8080 livre, não utiliza `backend/.env` e remove sua própria
+O E2E usa uma porta dinâmica em loopback, não utiliza `backend/.env` e remove sua própria
 stack ao terminar. Totais globais de inventário são separados de UP/DOWN/sem dados
 da página visível. Métricas históricas usam janelas fixas e não fazem polling.
 

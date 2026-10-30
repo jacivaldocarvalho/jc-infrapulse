@@ -1,228 +1,93 @@
-"""Validate Nginx, real CRUD/worker checks and ports in a disposable Compose project.
+"""Run the real dashboard E2E suite on a disposable stack and dynamic port."""
 
-Requires frontend dependencies and Playwright Chromium to be installed.
-Never reads backend/.env, touches development containers or prints credentials.
-"""
-
+import argparse
 import json
-import os
-import secrets
-import socket
-import subprocess
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-PROJECT = f"infrapulse-frontend-{os.getpid()}"
-ENV = dict(
-    os.environ,
-    INFRAPULSE_TEST_PASSWORD=secrets.token_hex(24),
-    INFRAPULSE_E2E_DISPOSABLE="1",
-    POSTGRES_PASSWORD=secrets.token_hex(24),
-    GRAFANA_ADMIN_PASSWORD=secrets.token_hex(24),
-)
-COMPOSE = [
-    "docker",
-    "compose",
-    "--env-file",
-    "/dev/null",
-    "-p",
-    PROJECT,
-    "-f",
-    "compose.frontend.test.yaml",
-]
+from integration_support import ROOT, IntegrationProject, run_cli
 
 
-def run(command: list[str], *, capture: bool = False, source: str | None = None) -> str:
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        env=ENV,
-        input=source,
-        text=True,
-        stdout=subprocess.PIPE if capture else None,
-        check=True,
-    )
-    return result.stdout if capture else ""
-
-
-def development_state() -> str:
-    return run(
-        [
-            "docker",
-            "ps",
-            "--filter",
-            f"label=com.docker.compose.project={ROOT.name}",
-            "--format",
-            "{{.ID}} {{.Names}}",
-        ],
-        capture=True,
-    )
-
-
-def verify_ports() -> None:
-    containers = run(
-        [
-            "docker",
-            "ps",
-            "-q",
-            "--filter",
-            f"label=com.docker.compose.project={PROJECT}",
-        ],
-        capture=True,
-    ).split()
-    assert len(containers) == 5, containers
-    for identifier in containers:
-        service = run(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                '{{index .Config.Labels "com.docker.compose.service"}}',
-                identifier,
-            ],
-            capture=True,
-        ).strip()
-        ports = (
-            json.loads(
-                run(
-                    [
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "{{json .NetworkSettings.Ports}}",
-                        identifier,
-                    ],
-                    capture=True,
-                )
+def verify_ports(project: IntegrationProject) -> str:
+    identifiers = project.run([*project.compose, "ps", "-q"], capture=True).split()
+    assert len(identifiers) == 5
+    base_url = ""
+    for identifier in identifiers:
+        data = json.loads(
+            project.run(
+                [
+                    "docker",
+                    "inspect",
+                    "--format",
+                    (
+                        '{"service":{{json (index .Config.Labels "com.docker.compose.service")}},'
+                        '"ports":{{json .NetworkSettings.Ports}},'
+                        '"networks":{{json .NetworkSettings.Networks}},'
+                        '"user":{{json .Config.User}},"readonly":{{json .HostConfig.ReadonlyRootfs}}}'
+                    ),
+                    identifier,
+                ],
+                capture=True,
             )
-            or {}
         )
         bindings = [
             (port, binding)
-            for port, values in ports.items()
+            for port, values in (data["ports"] or {}).items()
             for binding in values or []
         ]
-        if service == "frontend":
-            assert bindings == [
-                ("8080/tcp", {"HostIp": "127.0.0.1", "HostPort": "8080"})
-            ], bindings
-            networks = json.loads(
-                run(
-                    [
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "{{json .NetworkSettings.Networks}}",
-                        identifier,
-                    ],
-                    capture=True,
-                )
-            )
-            assert set(networks) == {f"{PROJECT}_api_access"}, networks
-            assert (
-                run(
-                    [
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "{{.Config.User}} {{.HostConfig.ReadonlyRootfs}}",
-                        identifier,
-                    ],
-                    capture=True,
-                ).strip()
-                == "101 true"
-            )
+        if data["service"] == "frontend":
+            assert len(bindings) == 1
+            port, binding = bindings[0]
+            assert port == "8080/tcp" and binding["HostIp"] == "127.0.0.1"
+            assert data["user"] == "101" and data["readonly"] is True
+            assert set(data["networks"]) == {f"{project.name}_api_access"}
+            base_url = f"http://127.0.0.1:{int(binding['HostPort'])}"
         else:
-            assert not bindings, (service, bindings)
-        if service == "test-db":
-            networks = json.loads(
-                run(
-                    [
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "{{json .NetworkSettings.Networks}}",
-                        identifier,
-                    ],
-                    capture=True,
-                )
-            )
-            assert set(networks) == {f"{PROJECT}_data"}, networks
-        print(f"Runtime: {service} published={bindings}", flush=True)
+            assert not bindings
+        if data["service"] == "test-db":
+            assert set(data["networks"]) == {f"{project.name}_data"}
+    assert base_url
+    project.assert_internal("data")
+    project.assert_internal("targets")
+    print(f"Only Nginx published: {base_url}", flush=True)
+    return base_url
 
 
 def main() -> None:
-    assert run(["git", "branch", "--show-current"], capture=True).strip() == "develop"
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 8080))
-    before = development_state()
-    print(
-        f"Disposable project: {PROJECT}; development containers preserved", flush=True
-    )
-    config = json.loads(
-        run(
-            [
-                "docker",
-                "compose",
-                "--env-file",
-                "/dev/null",
-                "config",
-                "--format",
-                "json",
-            ],
-            capture=True,
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cleanup", action="store_true")
+    args = parser.parse_args()
+    project = IntegrationProject("e2e", ["compose.frontend.test.yaml"])
+    if args.cleanup:
+        project.cleanup()
+        return
+    with project:
+        project.run([*project.compose, "config", "--quiet"])
+        project.run([*project.compose, "build", "api", "worker", "frontend"])
+        project.allow_target("targets")
+        project.run(
+            [*project.compose, "up", "-d", "--wait", "--wait-timeout", "120", "test-db"]
         )
-    )
-    expected = {"api": 8000, "grafana": 3000, "frontend": 8080}
-    for name, service in config["services"].items():
-        ports = service.get("ports", [])
-        if name in expected:
-            assert (
-                len(ports) == 1
-                and ports[0]["host_ip"] == "127.0.0.1"
-                and int(ports[0]["published"]) == expected[name]
-            )
-        else:
-            assert not ports, name
-    assert set(config["services"]["db"]["networks"]) == {"internal"}
-    assert set(config["services"]["frontend"]["networks"]) == {"api_access"}
-    print(
-        "Main Compose: only API:8000, Grafana:3000 and frontend:8080 on 127.0.0.1",
-        flush=True,
-    )
-    run([*COMPOSE, "config", "--quiet"])
-    try:
-        run([*COMPOSE, "build", "api", "worker", "frontend"])
-        run([*COMPOSE, "up", "-d", "--wait", "test-db"])
-        run([*COMPOSE, "run", "--rm", "--no-deps", "api", "alembic", "upgrade", "head"])
-        run([*COMPOSE, "up", "-d", "--wait"])
-        run(
-            [*COMPOSE, "exec", "-T", "api", "python", "-"],
+        project.run(
+            [
+                *project.compose,
+                "run",
+                "--rm",
+                "--no-deps",
+                "api",
+                "alembic",
+                "upgrade",
+                "head",
+            ]
+        )
+        project.run([*project.compose, "up", "-d", "--wait", "--wait-timeout", "120"])
+        project.run(
+            [*project.compose, "exec", "-T", "api", "python", "-"],
             source=(ROOT / "scripts/seed-dashboard-e2e.py").read_text(),
         )
-        run([*COMPOSE, "exec", "-T", "frontend", "nginx", "-t"])
-        verify_ports()
-        run(["npm", "--prefix", "frontend", "run", "test:e2e"])
-    except BaseException:
-        run([*COMPOSE, "logs", "--tail", "40", "frontend"])
-        raise
-    finally:
-        try:
-            run([*COMPOSE, "down", "--volumes", "--remove-orphans"])
-        finally:
-            assert development_state() == before, (
-                "Development containers changed during verification"
-            )
-            print(
-                "Development container IDs unchanged; disposable stack removed",
-                flush=True,
-            )
+        project.run([*project.compose, "exec", "-T", "frontend", "nginx", "-t"])
+        project.env["E2E_BASE_URL"] = verify_ports(project)
+        project.env["INFRAPULSE_E2E_DISPOSABLE"] = "1"
+        project.run(["npm", "--prefix", "frontend", "run", "test:e2e"])
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (AssertionError, OSError, subprocess.CalledProcessError) as error:
-        print(f"Dashboard verification failed: {error}", file=sys.stderr)
-        raise SystemExit(1) from error
+    run_cli(main)

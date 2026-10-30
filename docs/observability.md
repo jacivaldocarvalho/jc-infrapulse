@@ -271,16 +271,20 @@ cd backend
 .venv/bin/python -m pip check
 ```
 
-O script cria projetos exclusivos, credenciais efêmeras e PostgreSQL 17 em tmpfs;
+O script cria um projeto exclusivo, credenciais efêmeras e PostgreSQL 17 em tmpfs;
 valida config/rules e cenários com promtool, Collector e Alertmanager; executa a
-suíte PostgreSQL; sobe a stack, consulta métricas/traces/dashboards/alertas, verifica
-bindings reais e simula Collector indisponível. Limpa somente seus projetos e
+stack, consulta métricas/traces/dashboards/alertas, verifica correlação com logs,
+bindings reais, Collector indisponível, recuperação e shutdown. A suíte PostgreSQL
+completa permanece no validador separado da D1. Limpa somente seu projeto e
 volumes ao terminar. Não reutiliza PostgreSQL de desenvolvimento.
 
-A fixture usa subnet `172.30.240.0/24` e autoriza exclusivamente o hostname
-`monitoring-target` nessa rede e porta 8080. Essa exceção existe só no override de
-testes. Se a subnet conflitar com uma rede local, ajuste subnet e a autorização
-juntas; não execute duas integrações de observabilidade simultaneamente.
+A rede é alocada pelo Docker, sem subnet fixa. O validador autoriza exclusivamente
+o hostname `monitoring-target`, seu IP real `/32` e a porta 8080. Essa exceção existe
+só no override de testes. Não lê `.env` local e não publica portas. Os dois testes
+são selecionados nominalmente, sem skips; o teste normal é repetido após a
+recuperação do Collector. Relatórios JUnit ficam em `OBSERVABILITY_RESULTS_DIR`
+ou em um diretório temporário informado pelo script. Execute sequencialmente com
+o Playwright quando compartilhar o mesmo daemon Docker.
 
 Referências: [Collector](https://opentelemetry.io/docs/collector/configuration/),
 [regras Prometheus](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/),
