@@ -1,5 +1,8 @@
 # Merge with compose.yaml using a distinct project; never reuses development volumes.
 services:
+  frontend:
+    ports: !reset []
+    profiles: [frontend]
   db:
     volumes: !reset []
     tmpfs: [/var/lib/postgresql/data]

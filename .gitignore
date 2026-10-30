@@ -21,3 +21,9 @@ build/
 
 # Entire local runtime logs
 .entire/logs/
+
+# Reproducible frontend contracts and local test evidence
+frontend/src/shared/api/generated.d.ts
+frontend/test-results/
+frontend/playwright-report/
+frontend/coverage/

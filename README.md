@@ -304,3 +304,45 @@ bash scripts/validate-observability.sh
 Veja [operação, métricas, alertas, retenção e troubleshooting](docs/observability.md),
 [ADR 0002](docs/adr/0002-observability-architecture.md) e
 [relatório de validação](docs/sprint04-report.md).
+
+## Frontend Dashboard — Sprint 05
+
+Dashboard React + TypeScript com inventário, CRUD de serviços, estado atual,
+métricas, histórico e gráficos. Temas claro/escuro e layout responsivo.
+
+Com o backend instalado e a API disponível em `127.0.0.1:8000`:
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run generate:api
+npm --prefix frontend run dev
+```
+
+Abra `http://127.0.0.1:5173`. Os tipos vêm do OpenAPI do código atual, sem servidor
+ou banco para a geração. O cliente usa a mesma origem, com proxy de desenvolvimento.
+
+No Compose, após configurar as senhas e aplicar as migrações conforme as instruções
+anteriores, `docker compose --env-file backend/.env up -d --build --wait frontend`
+disponibiliza a interface em `http://127.0.0.1:8080`. O Nginx encaminha somente as
+rotas funcionais necessárias. Banco e telemetria continuam sem portas publicadas.
+
+Validação frontend e E2E real em PostgreSQL descartável:
+
+```bash
+npm --prefix frontend run build
+npm --prefix frontend run lint
+npm --prefix frontend run format:check
+npm --prefix frontend test
+cd frontend
+npx playwright install chromium
+cd ..
+python3 scripts/validate-dashboard.py
+```
+
+O E2E exige a porta 8080 livre, não utiliza `backend/.env` e remove sua própria
+stack ao terminar. Totais globais de inventário são separados de UP/DOWN/sem dados
+da página visível. Métricas históricas usam janelas fixas e não fazem polling.
+
+Veja [operação e limites do dashboard](docs/frontend.md),
+[ADR 0003](docs/adr/0003-frontend-dashboard.md) e
+[relatório da sprint](docs/sprint05-report.md).

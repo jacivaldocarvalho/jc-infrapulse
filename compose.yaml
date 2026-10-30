@@ -1,4 +1,19 @@
 services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [api_access]
+    mem_limit: 128m
+    cpus: 0.5
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
   worker:
     build: ./backend
     env_file: ./backend/.env

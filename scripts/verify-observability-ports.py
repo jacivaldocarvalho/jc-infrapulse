@@ -44,8 +44,11 @@ for identifier in containers:
             assert (container_port, binding["HostPort"]) in {
                 ("8000/tcp", "8000"),
                 ("3000/tcp", "3000"),
+                ("8080/tcp", "8080"),
             }, (name, container_port, binding)
             published.append(binding)
     if name.endswith("-db-1"):
         assert set(networks) == {f"{args.project}_internal"}, networks
+    if name.endswith("-frontend-1"):
+        assert set(networks) == {f"{args.project}_api_access"}, networks
     print(name, "published=", published, "networks=", sorted(networks))
