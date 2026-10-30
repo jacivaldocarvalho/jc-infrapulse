@@ -256,6 +256,50 @@ jobs:
           test -n "$(find dist/assets -type f -name '*.js' -size +0c -print -quit)"
           test -n "$(find dist/assets -type f -name '*.css' -size +0c -print -quit)"
 
+  backend-postgres:
+    name: backend-postgres
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: .
+    env:
+      POSTGRES_TEST_PROJECT: infrapulse-ci-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Reserve a new isolated Compose project
+        id: postgres-isolation
+        run: |
+          [[ "$POSTGRES_TEST_PROJECT" =~ ^infrapulse-ci-postgres-[0-9]+-[0-9]+$ ]]
+          project_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$POSTGRES_TEST_PROJECT")
+          project_networks=$(docker network ls -q --filter "label=com.docker.compose.project=$POSTGRES_TEST_PROJECT")
+          project_volumes=$(docker volume ls -q --filter "label=com.docker.compose.project=$POSTGRES_TEST_PROJECT")
+          test -z "$project_containers"
+          test -z "$project_networks"
+          test -z "$project_volumes"
+          test_password=$(openssl rand -hex 32)
+          printf '::add-mask::%s\n' "$test_password"
+          printf 'INFRAPULSE_TEST_PASSWORD=%s\n' "$test_password" >> "$GITHUB_ENV"
+          # Enable cleanup only after proving this project was absent.
+          printf 'ready=true\n' >> "$GITHUB_OUTPUT"
+      - name: Validate the standalone test Compose
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" config --quiet
+      - name: Build the existing backend test image
+        timeout-minutes: 15
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" build tests
+      - name: Run the serial PostgreSQL suite and real worker
+        timeout-minutes: 5
+        # The existing image runs pytest serially; Compose propagates its exit code.
+        # PostgreSQL fixtures verify major 17 and all Alembic migration cycles.
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" up --abort-on-container-exit --exit-code-from tests
+      - name: Clean up only the reserved disposable project
+        if: ${{ always() && steps.postgres-isolation.outputs.ready == 'true' }}
+        timeout-minutes: 2
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" down --volumes --remove-orphans --timeout 30
+
   ci-required:
     name: ci-required
     runs-on: ubuntu-24.04
@@ -269,6 +313,7 @@ jobs:
       - frontend-quality
       - frontend-tests
       - frontend-build
+      - backend-postgres
     steps:
       - name: Require every dependency to succeed
         working-directory: .
