@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -9,7 +9,17 @@ RUN groupadd --system app && useradd --system --gid app app
 COPY pyproject.toml ./
 COPY requirements.lock ./
 COPY app ./app
+COPY alembic.ini ./
+COPY alembic ./alembic
 RUN pip install -c requirements.lock .
+
+FROM base AS test
+COPY tests ./tests
+RUN pip install -c requirements.lock '.[dev]'
+USER app
+CMD ["pytest", "-v", "-rs", "-o", "cache_dir=/tmp/pytest_cache"]
+
+FROM base AS runtime
 USER app
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

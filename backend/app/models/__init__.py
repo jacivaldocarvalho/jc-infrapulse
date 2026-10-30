@@ -1,1 +1,1 @@
-"""Persistence models reserved for upcoming sprints."""
+"""SQLAlchemy persistence models."""

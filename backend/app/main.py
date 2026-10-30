@@ -3,12 +3,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-from app.api.routes import health, info
+from app.api.routes import health, info, services
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.db.session import create_database_engine
+from app.services.service_registry import InvalidServiceError, ServiceNotFoundError
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -31,6 +33,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.include_router(health.router)
     application.include_router(info.router)
+    application.include_router(services.router)
+
+    @application.exception_handler(ServiceNotFoundError)
+    async def service_not_found(request: Request, exc: ServiceNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": "Service not found"})
+
+    @application.exception_handler(InvalidServiceError)
+    async def invalid_service(request: Request, exc: InvalidServiceError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
     return application
 
 

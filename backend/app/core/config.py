@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     postgres_password: SecretStr = Field(min_length=1)
     db_connect_timeout: int = Field(default=3, ge=1, le=30)
     db_statement_timeout_ms: int = Field(default=3000, ge=1, le=30000)
+    service_internal_hosts: list[str] = Field(default_factory=list)
 
     @property
     def database_url(self) -> URL:

@@ -1,1 +1,1 @@
-"""Business services reserved for upcoming sprints."""
+"""Business rules and transaction boundaries."""
