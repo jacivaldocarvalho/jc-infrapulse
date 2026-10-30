@@ -99,13 +99,176 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  api-contract:
+    name: api-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements.lock
+      - name: Install locked backend dependencies
+        run: python -m pip install -c requirements.lock -e .
+      - name: Export and validate the current OpenAPI contract
+        working-directory: .
+        env:
+          OPENAPI_SCHEMA_FILE: ${{ runner.temp }}/api-contract/openapi.json
+        run: |
+          mkdir -p "$(dirname "$OPENAPI_SCHEMA_FILE")"
+          python -B scripts/export-openapi.py > "$OPENAPI_SCHEMA_FILE"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from fastapi.openapi.models import OpenAPI
+
+          schema = OpenAPI.model_validate_json(
+              Path(os.environ['OPENAPI_SCHEMA_FILE']).read_text()
+          )
+          if (
+              not schema.openapi.startswith('3.')
+              or not schema.paths
+              or not schema.components
+              or not schema.components.schemas
+          ):
+              raise ValueError('Expected a nonempty OpenAPI 3 contract with component schemas')
+          print(f'Validated OpenAPI {schema.openapi}: {len(schema.paths)} paths')
+          PY
+      - name: Upload the contract for this workflow run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract/openapi.json
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend-quality:
+    name: frontend-quality
+    needs: [api-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Download the contract from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract
+      - name: Generate API types from the shared contract
+        env:
+          OPENAPI_SCHEMA_FILE: ${{ runner.temp }}/api-contract/openapi.json
+        run: npm run generate:api
+      - name: Type check frontend
+        run: npm run typecheck
+      - name: Lint frontend with zero warnings
+        run: npm run lint -- --max-warnings=0
+      - name: Check frontend formatting
+        run: npm run format:check
+
+  frontend-tests:
+    name: frontend-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Run frontend tests including deletion regressions
+        run: npm test -- --reporter=default --reporter=junit --outputFile=test-results/frontend-unit.xml
+      - name: Upload frontend test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-unit-junit
+          path: frontend/test-results/frontend-unit.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend-build:
+    name: frontend-build
+    needs: [api-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Download the contract from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract
+      - name: Build production frontend from the shared contract
+        # The existing build script generates types and runs typecheck before Vite.
+        env:
+          OPENAPI_SCHEMA_FILE: ${{ runner.temp }}/api-contract/openapi.json
+        run: npm run build
+      - name: Verify production output
+        run: |
+          test -s dist/index.html
+          test -n "$(find dist/assets -type f -name '*.js' -size +0c -print -quit)"
+          test -n "$(find dist/assets -type f -name '*.css' -size +0c -print -quit)"
+
   ci-required:
     name: ci-required
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: ${{ always() }}
     # Add future gates here; keep the public job name stable.
-    needs: [backend-quality, backend-unit]
+    needs:
+      - backend-quality
+      - backend-unit
+      - api-contract
+      - frontend-quality
+      - frontend-tests
+      - frontend-build
     steps:
       - name: Require every dependency to succeed
         working-directory: .
