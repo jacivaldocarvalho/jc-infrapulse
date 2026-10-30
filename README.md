@@ -27,7 +27,8 @@ Execute os comandos abaixo na raiz do repositório.
 cp backend/.env.example backend/.env
 ```
 
-Edite `backend/.env` e preencha `POSTGRES_PASSWORD` com uma senha local gerada,
+Edite `backend/.env` e preencha `POSTGRES_PASSWORD` e `GRAFANA_ADMIN_PASSWORD`
+com senhas locais distintas, geradas,
 por exemplo com `openssl rand -hex 24`. Não versione esse arquivo.
 
 ```bash
@@ -99,7 +100,7 @@ acessível pelo host; o banco do Compose não é publicado. Depois, em `backend/
   registra as versões resolvidas, incluindo as ferramentas de desenvolvimento.
 - A Sprint 02 adiciona o registro de serviços e migrações Alembic. A Sprint 03
   adiciona monitoramento HTTP em worker independente, histórico e métricas REST.
-  Prometheus e instrumentação OpenTelemetry completos ficam para a Sprint 04.
+  A Sprint 04 adiciona métricas Prometheus, traces OpenTelemetry e stack operacional.
 
 ## Service Registry API — Sprint 02
 
@@ -273,3 +274,33 @@ Valide o Compose principal sem imprimir sua configuração interpolada:
 ```bash
 docker compose --env-file backend/.env config --quiet
 ```
+
+## Observability & Telemetry — Sprint 04
+
+API e worker expõem métricas em listeners internos independentes. Prometheus
+coleta RED e scheduler; OpenTelemetry exporta traces ao Collector e Tempo.
+Grafana provisiona os dashboards InfraPulse API, Worker e Reliability.
+Alertmanager recebe alertas e usa receiver local sem notificações externas.
+
+Configure `GRAFANA_ADMIN_PASSWORD` em `backend/.env`, além da senha do PostgreSQL,
+e inicie a stack após as migrações:
+
+```bash
+docker compose --env-file backend/.env up -d --wait
+```
+
+Grafana está em `http://localhost:3000`, com usuário `admin` por padrão e a senha
+configurada. Somente API (8000) e Grafana (3000) são publicados em loopback.
+Métricas (9000/9001), OTLP (4318), Tempo (3200), Prometheus (9090), Alertmanager
+(9093) e PostgreSQL permanecem sem portas publicadas. O arquivo de heartbeat do
+worker e as políticas SSRF da Sprint 03 são preservados.
+
+Para validar a stack real e PostgreSQL 17 em projetos descartáveis:
+
+```bash
+bash scripts/validate-observability.sh
+```
+
+Veja [operação, métricas, alertas, retenção e troubleshooting](docs/observability.md),
+[ADR 0002](docs/adr/0002-observability-architecture.md) e
+[relatório de validação](docs/sprint04-report.md).

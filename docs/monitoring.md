@@ -218,4 +218,5 @@ verifica upgrade/downgrade completo e incremental `0001 → 0002 → 0001 → 00
 preservação do cadastro, constraints, cascata, p95 PostgreSQL e worker em processo
 real. Não há retenção automática nesta sprint: acompanhe o crescimento do histórico.
 
-Prometheus/OpenTelemetry completos e visualização ficam para a Sprint 04.
+A Sprint 04 adiciona telemetria operacional sem alterar estas garantias de
+monitoramento. Veja [observability.md](observability.md).

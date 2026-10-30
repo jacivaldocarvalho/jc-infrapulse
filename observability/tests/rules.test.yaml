@@ -1,0 +1,376 @@
+{
+  "rule_files": [
+    "/etc/prometheus/alerts.yaml"
+  ],
+  "evaluation_interval": "15s",
+  "tests": [
+    {
+      "name": "Idle API and no active services must not alert",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "http_server_requests_total{job=\"infrapulse-api\",status_code=\"500\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "infrapulse_active_services{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "infrapulse_last_up_check_timestamp_seconds{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "0+0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseAPIHighErrorRate",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseAPIHighLatency",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseNoSuccessfulChecks",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseAPINoData",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseWorkerNoData",
+          "exp_alerts": []
+        }
+      ]
+    },
+    {
+      "name": "Low traffic suppresses error alert",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "http_server_requests_total{job=\"infrapulse-api\",status_code=\"500\"}",
+          "values": "0+1x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseAPIHighErrorRate",
+          "exp_alerts": []
+        }
+      ]
+    },
+    {
+      "name": "API outage persists before firing",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "1m",
+          "alertname": "InfraPulseAPIDown",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "3m",
+          "alertname": "InfraPulseAPIDown",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "job": "infrapulse-api",
+                "instance": "api:9000",
+                "severity": "critical"
+              },
+              "exp_annotations": {
+                "summary": "API metrics target unavailable"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sustained HTTP errors with sufficient traffic",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "http_server_requests_total{job=\"infrapulse-api\",status_code=\"500\"}",
+          "values": "0+100x30"
+        },
+        {
+          "series": "http_server_requests_total{job=\"infrapulse-api\",status_code=\"200\"}",
+          "values": "0+900x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseAPIHighErrorRate",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "API 5xx ratio exceeds 5 percent with sufficient traffic"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Startup suppresses missing successful checks",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "infrapulse_active_services{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "infrapulse_last_up_check_timestamp_seconds{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "infrapulse_process_start_timestamp_seconds{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "infrapulse_checks_total{job=\"infrapulse-worker\",instance=\"worker:9001\",status=\"DOWN\"}",
+          "values": "0+10x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "5m",
+          "alertname": "InfraPulseNoSuccessfulChecks",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseNoSuccessfulChecks",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "job": "infrapulse-worker",
+                "instance": "worker:9001",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Active checks have no recent persisted UP; inspect destination and persistence errors"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Loop can stall while exporter remains UP",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "infrapulse_event_loop_last_tick_timestamp_seconds{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "infrapulse_process_start_timestamp_seconds{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "0+0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseEventLoopStalled",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "job": "infrapulse-api",
+                "instance": "api:9000",
+                "severity": "critical"
+              },
+              "exp_annotations": {
+                "summary": "Event loop heartbeat stale despite available exporter"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sustained worker saturation",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "infrapulse_checks_in_flight{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "10+0x30"
+        },
+        {
+          "series": "infrapulse_worker_capacity{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "10+0x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseWorkerSaturated",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "job": "infrapulse-worker",
+                "instance": "worker:9001",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Worker capacity above 90 percent"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Internal failures independently alert",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "infrapulse_scheduler_errors_total{job=\"infrapulse-worker\",instance=\"worker:9001\",stage=\"persist\"}",
+          "values": "0+1x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseSchedulerErrors",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "job": "infrapulse-worker",
+                "instance": "worker:9001",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Internal scheduler error"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "High p95 with sufficient traffic",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"infrapulse-api\",instance=\"api:9000\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "up{job=\"infrapulse-worker\",instance=\"worker:9001\"}",
+          "values": "1+0x30"
+        },
+        {
+          "series": "http_server_requests_total{job=\"infrapulse-api\",status_code=\"200\"}",
+          "values": "0+1000x30"
+        },
+        {
+          "series": "http_server_request_duration_seconds_bucket{job=\"infrapulse-api\",le=\"1\"}",
+          "values": "0+0x30"
+        },
+        {
+          "series": "http_server_request_duration_seconds_bucket{job=\"infrapulse-api\",le=\"2.5\"}",
+          "values": "0+1000x30"
+        },
+        {
+          "series": "http_server_request_duration_seconds_bucket{job=\"infrapulse-api\",le=\"+Inf\"}",
+          "values": "0+1000x30"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "15m",
+          "alertname": "InfraPulseAPIHighLatency",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "API p95 exceeds one second with sufficient traffic"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

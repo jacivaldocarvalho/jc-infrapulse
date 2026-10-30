@@ -9,6 +9,16 @@ from sqlalchemy import URL
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
+    metrics_enabled: bool = False
+    metrics_host: str = "127.0.0.1"
+    api_metrics_port: int = Field(default=9000, ge=0, le=65535)
+    worker_metrics_port: int = Field(default=9001, ge=0, le=65535)
+    telemetry_enabled: bool = False
+    telemetry_endpoint: str = "http://otel-collector:4318/v1/traces"
+    telemetry_sample_ratio: float = Field(default=0.1, ge=0, le=1)
+    telemetry_timeout_seconds: float = Field(default=1, gt=0, le=2)
+    deployment_environment: str = "development"
+
     service_name: str = "infrapulse-api"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     postgres_host: str = "localhost"

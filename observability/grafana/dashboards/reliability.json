@@ -1,0 +1,136 @@
+{
+  "uid": "infrapulse-reliability",
+  "title": "InfraPulse Reliability",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "text",
+      "title": "Scope",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Aggregate operational samples only. Per-service persisted history and availability remain in PostgreSQL via the REST API. No service_id or URL labels. No data is not 0% availability."
+      }
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Aggregate UP fraction (sample based)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(infrapulse_checks_total{job=\"infrapulse-worker\",status=\"UP\"}[$__rate_interval])) / sum(rate(infrapulse_checks_total{job=\"infrapulse-worker\"}[$__rate_interval]))",
+          "legendFormat": "{{route}}{{status}}{{stage}}{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Persisted results",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(status)(rate(infrapulse_check_results_persisted_total{job=\"infrapulse-worker\"}[$__rate_interval]))",
+          "legendFormat": "{{route}}{{status}}{{stage}}{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Technical failures",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(status)(rate(infrapulse_checks_total{job=\"infrapulse-worker\",status!~\"UP|DOWN\"}[$__rate_interval]))",
+          "legendFormat": "{{route}}{{status}}{{stage}}{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Active services",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "infrapulse_active_services{job=\"infrapulse-worker\"}",
+          "legendFormat": "{{route}}{{status}}{{stage}}{{job}}"
+        }
+      ]
+    }
+  ]
+}

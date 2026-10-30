@@ -24,6 +24,9 @@ class MemoryStore:
         self.results: list[CheckOutcome] = []
         self.active = True
 
+    def active_count(self) -> int:
+        return len(self.targets) if self.active else 0
+
     def due(self, limit: int, excluded: set[UUID]) -> list[CheckTarget]:
         return [target for target in self.targets if target.id not in excluded][:limit]
 

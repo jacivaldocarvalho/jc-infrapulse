@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 
 from fastapi import Request
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
 
@@ -21,5 +23,16 @@ def create_database_engine(settings: Settings) -> Engine:
 
 
 def get_session(request: Request) -> Iterator[Session]:
-    with Session(request.app.state.engine, expire_on_commit=False) as session:
-        yield session
+    span = (
+        request.app.state.telemetry.tracer.start_span("db.session")
+        if request.scope["path"] != "/ready"
+        else trace.INVALID_SPAN
+    )
+    try:
+        with Session(request.app.state.engine, expire_on_commit=False) as session:
+            yield session
+    except BaseException:
+        span.set_status(StatusCode.ERROR)
+        raise
+    finally:
+        span.end()

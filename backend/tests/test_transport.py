@@ -105,6 +105,8 @@ async def test_real_pinned_socket_preserves_host_sni_and_ignores_proxies(
             assert f"Host: api.example.com:{port}\r\n".encode() in data
             assert b"User-Agent: InfraPulse/" in data
             assert b"Cookie:" not in data and b"Authorization:" not in data
+            for header in (b"traceparent:", b"tracestate:", b"baggage:"):
+                assert header not in data.lower()
     finally:
         server.close()
         await server.wait_closed()

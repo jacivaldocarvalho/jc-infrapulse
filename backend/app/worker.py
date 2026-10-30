@@ -14,6 +14,8 @@ from app.core.logging import configure_logging
 from app.db.session import create_database_engine
 from app.monitoring.checker import HTTPChecker
 from app.monitoring.scheduler import MonitoringScheduler, SQLMonitoringStore
+from app.observability.metrics import Metrics, MetricsServer
+from app.observability.tracing import Telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +25,11 @@ def write_heartbeat(path: Path) -> None:
 
 
 class WorkerScheduler(MonitoringScheduler):
-    async def tick(self) -> None:
-        await super().tick()
+    async def _tick(self) -> str:
+        outcome = await super()._tick()
+        self.cycle_stage = "heartbeat"
         await asyncio.to_thread(write_heartbeat, Path(self.settings.monitoring_heartbeat_path))
+        return outcome
 
 
 def healthy(settings: Settings) -> bool:
@@ -45,12 +49,23 @@ async def run_worker(settings: Settings) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
+    metrics, telemetry = Metrics(), Telemetry(settings, "worker")
+    listener = MetricsServer(metrics, settings.metrics_host, settings.worker_metrics_port)
+    pulse = asyncio.create_task(metrics.pulse())
     logger.info("worker_started")
     try:
-        await WorkerScheduler(settings, SQLMonitoringStore(engine), HTTPChecker(settings)).run(stop)
+        if settings.metrics_enabled:
+            await listener.start()
+        await WorkerScheduler(
+            settings, SQLMonitoringStore(engine), HTTPChecker(settings), metrics, telemetry
+        ).run(stop)
     finally:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.remove_signal_handler(sig)
+        pulse.cancel()
+        await asyncio.gather(pulse, return_exceptions=True)
+        await listener.close()
+        await telemetry.close()
         await asyncio.to_thread(engine.dispose)
         Path(settings.monitoring_heartbeat_path).unlink(missing_ok=True)
         logger.info("worker_stopped")
