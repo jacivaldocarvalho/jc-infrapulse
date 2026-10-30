@@ -17,7 +17,7 @@ def test_migration_and_postgres_persistence(postgres_engine: Engine) -> None:
         version = connection.scalar(text("SHOW server_version_num"))
         assert isinstance(version, str)
         assert int(version) // 10000 == 17
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
     identifier = uuid4()
     with Session(postgres_engine) as session, session.begin():
         session.add(Service(id=identifier, name="Persisted", url="https://example.com"))

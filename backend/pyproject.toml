@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "InfraPulse API Reliability & Observability Platform"
 requires-python = ">=3.12"
 dependencies = [
+    "httpcore[asyncio]>=1.0.9,<1.1",
     "fastapi>=0.115,<1",
     "pydantic>=2.10,<3",
     "pydantic-settings>=2.6,<3",

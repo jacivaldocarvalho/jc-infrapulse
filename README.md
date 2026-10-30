@@ -16,7 +16,7 @@ de APIs, métricas de confiabilidade e incidentes.
 Desenvolvimento assistido por IA com rastreabilidade
 de sessões e decisões técnicas.
 
-## Backend — Sprints 01 e 02
+## Backend — Sprints 01 a 03
 
 Requisitos: Docker com Compose v2+; para desenvolvimento sem containers, Python 3.12+.
 Execute os comandos abaixo na raiz do repositório.
@@ -31,22 +31,23 @@ Edite `backend/.env` e preencha `POSTGRES_PASSWORD` com uma senha local gerada,
 por exemplo com `openssl rand -hex 24`. Não versione esse arquivo.
 
 ```bash
-docker compose --env-file backend/.env build api
+docker compose --env-file backend/.env build api worker
 docker compose --env-file backend/.env up -d --wait db
 docker compose --env-file backend/.env run --rm --no-deps api alembic upgrade head
-docker compose --env-file backend/.env up -d --wait api
+docker compose --env-file backend/.env up -d --wait api worker
 curl http://localhost:8000/health
 curl http://localhost:8000/ready
 curl http://localhost:8000/api/v1
 docker compose --env-file backend/.env ps
-docker compose --env-file backend/.env logs api
+docker compose --env-file backend/.env logs api worker
 ```
 
 A API fica disponível em `http://localhost:8000`; documentação em `/docs`.
 O argumento `--env-file` é necessário para interpolar as variáveis do serviço `db`.
 O Compose define `POSTGRES_HOST=db` para a API, independentemente do valor local.
-O PostgreSQL não publica portas no host. Ambos os serviços usam uma rede interna;
+O PostgreSQL não publica portas no host. API e worker acessam uma rede interna;
 a API também usa uma rede bridge para publicar HTTP somente em `127.0.0.1`.
+O worker tem uma bridge de saída HTTP, sem portas publicadas.
 Os dados ficam no volume nomeado `postgres_data`.
 
 ```bash
@@ -96,9 +97,9 @@ acessível pelo host; o banco do Compose não é publicado. Depois, em `backend/
   A imagem roda com usuário sem privilégios e seu health check usa `/ready`.
 - `pyproject.toml` registra as faixas de compatibilidade; `requirements.lock`
   registra as versões resolvidas, incluindo as ferramentas de desenvolvimento.
-- A Sprint 02 adiciona o registro de serviços e migrações Alembic. Execução de
-  health checks dos serviços, métricas Prometheus e instrumentação OpenTelemetry
-  ficam para sprints posteriores.
+- A Sprint 02 adiciona o registro de serviços e migrações Alembic. A Sprint 03
+  adiciona monitoramento HTTP em worker independente, histórico e métricas REST.
+  Prometheus e instrumentação OpenTelemetry completos ficam para a Sprint 04.
 
 ## Service Registry API — Sprint 02
 
@@ -110,7 +111,7 @@ acessível pelo host; o banco do Compose não é publicado. Depois, em `backend/
 | `PATCH /api/v1/services/{id}` | Atualização parcial; HTTP 200 |
 | `DELETE /api/v1/services/{id}` | Exclusão definitiva; HTTP 204 sem corpo |
 
-Exemplo de cadastro (a URL cadastrada não recebe requisições nesta sprint):
+Exemplo de cadastro (serviços ativos recebem verificações quando o worker está em execução):
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/services \
@@ -169,7 +170,8 @@ execute os comandos em `backend/`, com o ambiente virtual e `.env` configurados:
 .venv/bin/alembic check
 ```
 
-A revisão inicial é `0001`. Migrações ficam versionadas em `backend/alembic/versions/`.
+A revisão inicial é `0001`; a Sprint 03 adiciona `0002` com os resultados de checks.
+Migrações ficam versionadas em `backend/alembic/versions/`.
 Para futuras alterações, gere uma revisão com `alembic revision --autogenerate -m
 "descricao"`, revise o SQL e versione o arquivo. `alembic downgrade base` remove
 a tabela e seus dados; a reversibilidade é testada somente no banco descartável.
@@ -197,15 +199,39 @@ A lista não aceita correspondência por prefixo ou wildcard. A exceção permit
 somente os hosts nomeados e nunca permite credenciais embutidas. Ela não pode
 ser definida pelo payload da API. O padrão seguro é `[]`.
 
-Esta é uma proteção no cadastro, **não uma garantia sobre os IPs resolvidos por
-DNS**. Não há resolução DNS nem requisições HTTP para as URLs cadastradas nesta
-sprint. Um domínio aparentemente público ainda pode resolver para uma rede interna.
+A validação de cadastro é complementada pelo executor da Sprint 03: ele resolve
+e valida todos os endereços DNS e conecta diretamente a um IP autorizado, sem
+resolver novamente o hostname. Preserva Host, SNI e validação de certificados TLS.
+Redirecionamentos, proxies ambientais e retries estão desabilitados.
 
-**Requisito obrigatório da Sprint 03:** antes de habilitar o executor HTTP,
-resolver e validar todos os endereços do destino, vincular a conexão ao IP validado
-e revalidar em cada nova conexão e em cada redirecionamento, incluindo mudanças
-de host/protocolo. Impedir DNS rebinding, acesso a redes internas não autorizadas
-e bypass por IPv6; aplicar a mesma política explícita de exceções internas.
+Para executar checks internos, `SERVICE_INTERNAL_HOSTS` sozinho não basta: também
+configure `MONITORING_INTERNAL_NETWORKS` com as redes privadas explicitamente
+autorizadas. Loopback, link-local e metadata continuam bloqueados. A política é
+reavaliada a cada tentativa, inclusive para serviços cadastrados anteriormente.
+Veja o [modelo de ameaças e operação do monitoramento](docs/monitoring.md).
+
+## HTTP Monitoring — Sprint 03
+
+| Método e caminho | Resultado |
+| --- | --- |
+| `GET /api/v1/services/{id}/checks` | Histórico paginado, ordenado do mais recente |
+| `GET /api/v1/services/{id}/metrics` | Contadores, disponibilidade, média e p95 |
+| `GET /api/v1/services/{id}/status` | Último estado conhecido e horário |
+
+Histórico e métricas aceitam `start`/`end` com timezone, janela padrão de 24 horas
+e máxima de 90 dias. Histórico aceita `limit` entre 1 e 100 e `offset` até 10000.
+Somente `UP` conta como sucesso; `down_checks` inclui todas as falhas técnicas.
+Sem dados, disponibilidade e latências são `null`. A disponibilidade representa
+proporção de verificações bem-sucedidas, sem ponderação pelo tempo.
+
+O worker usa `python -m app.worker`, executa apenas serviços ativos, limita a
+concorrência e evita sobreposição por serviço. Não inicie mais de uma instância:
+réplicas exigirão coordenação distribuída. A API não inicia tarefas periódicas.
+Excluir um serviço remove seu histórico em cascata. Não há retenção automática.
+
+Configuração, semântica dos estados, recuperação após reinício e encerramento:
+[documentação operacional](docs/monitoring.md).
+Decisões: [ADR do monitoramento](docs/adr/0001-http-monitoring.md).
 
 ### Testes com PostgreSQL 17 isolado
 
@@ -215,11 +241,11 @@ toda a suíte contra PostgreSQL real, a partir da raiz:
 
 ```bash
 export INFRAPULSE_TEST_PASSWORD="$(openssl rand -hex 24)"
-docker compose -f compose.test.yaml -p infrapulse-sprint02-test config --quiet
-docker compose -f compose.test.yaml -p infrapulse-sprint02-test build tests
-docker compose -f compose.test.yaml -p infrapulse-sprint02-test up \
+docker compose -f compose.test.yaml -p infrapulse-sprint03-test config --quiet
+docker compose -f compose.test.yaml -p infrapulse-sprint03-test build tests
+docker compose -f compose.test.yaml -p infrapulse-sprint03-test up \
   --abort-on-container-exit --exit-code-from tests
-docker compose -f compose.test.yaml -p infrapulse-sprint02-test down
+docker compose -f compose.test.yaml -p infrapulse-sprint03-test down
 unset INFRAPULSE_TEST_PASSWORD
 ```
 
@@ -235,6 +261,12 @@ upgrade, downgrade, novo upgrade e `alembic check` antes dos testes. As tabelas
 são limpas entre testes de API apenas nesse banco descartável. A suíte verifica
 CRUD, paginação, filtros, validações, SSRF, persistência entre sessões distintas,
 timezone, defaults e constraints reais do PostgreSQL 17.
+
+A Sprint 03 também testa migrações incrementais preservando serviços, checks,
+métricas, cascata e worker real com servidor HTTP controlado na rede isolada.
+Testes SSRF/TLS não acessam serviços públicos. Para executar os testes locais de
+TLS, o utilitário `openssl` precisa estar instalado; a imagem Docker de testes
+já o fornece e gera certificados temporários durante os testes.
 
 Valide o Compose principal sem imprimir sua configuração interpolada:
 

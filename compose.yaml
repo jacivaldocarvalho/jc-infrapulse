@@ -1,4 +1,22 @@
 services:
+  worker:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    command: ["python", "-m", "app.worker"]
+    stop_grace_period: 75s
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks: [internal, monitoring_access]
   api:
     build: ./backend
     env_file: ./backend/.env
@@ -36,6 +54,8 @@ volumes:
   postgres_data:
 
 networks:
+  monitoring_access:
+    driver: bridge
   api_access:
     driver: bridge
   internal:

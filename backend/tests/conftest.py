@@ -1,13 +1,14 @@
 import os
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -16,6 +17,7 @@ from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import create_database_engine, get_session
 from app.main import create_app
+from app.models.check_result import CheckResult  # noqa: F401
 from app.models.service import Service  # noqa: F401
 
 
@@ -55,8 +57,23 @@ def postgres_engine() -> Iterator[Engine]:
     engine = create_database_engine(settings)
     with engine.connect() as connection:
         assert not connection.scalar(text("SELECT to_regclass('public.services')"))
+        assert not connection.scalar(text("SELECT to_regclass('public.check_results')"))
+    command.upgrade(config, "0001")
+    identifier = uuid4()
+    with Session(engine) as session, session.begin():
+        session.add(Service(id=identifier, name="Migration sentinel", url="https://example.com"))
+    command.upgrade(config, "head")
+    with Session(engine) as session:
+        assert session.get(Service, identifier) is not None
+    command.downgrade(config, "0001")
+    with engine.connect() as connection:
+        assert not connection.scalar(text("SELECT to_regclass('public.check_results')"))
     command.upgrade(config, "head")
     command.check(config)
+    with Session(engine) as session, session.begin():
+        record = session.get(Service, identifier)
+        assert record is not None
+        session.delete(record)
     try:
         yield engine
     finally:
@@ -68,12 +85,20 @@ def registry_engine(request: pytest.FixtureRequest) -> Iterator[Engine]:
     if os.environ.get("INFRAPULSE_RUN_INTEGRATION") == "1":
         engine: Engine = request.getfixturevalue("postgres_engine")
         with engine.begin() as connection:
-            connection.execute(text("TRUNCATE services"))
+            connection.execute(text("TRUNCATE check_results, services"))
         yield engine
     else:
         engine = create_engine(
             "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
+
+        @event.listens_for(engine, "connect")
+        def enable_foreign_keys(dbapi_connection: object, connection_record: object) -> None:
+            from sqlite3 import Connection
+
+            assert isinstance(dbapi_connection, Connection)
+            dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
         # SQLite is only a fast unit-test fixture. PostgreSQL uses Alembic exclusively.
         Base.metadata.create_all(engine)
         try:

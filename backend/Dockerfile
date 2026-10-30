@@ -14,6 +14,8 @@ COPY alembic ./alembic
 RUN pip install -c requirements.lock .
 
 FROM base AS test
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 COPY tests ./tests
 RUN pip install -c requirements.lock '.[dev]'
 USER app

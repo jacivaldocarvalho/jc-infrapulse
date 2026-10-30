@@ -1,4 +1,5 @@
 # Standalone project: no development database, network or volume is reused.
+# Worker integration runs as a subprocess of tests against a controlled local server.
 services:
   test-db:
     image: postgres:17-bookworm

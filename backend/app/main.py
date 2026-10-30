@@ -6,7 +6,7 @@ from importlib.metadata import version
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health, info, services
+from app.api.routes import health, info, monitoring, services
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.db.session import create_database_engine
@@ -34,6 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(health.router)
     application.include_router(info.router)
     application.include_router(services.router)
+    application.include_router(monitoring.router)
 
     @application.exception_handler(ServiceNotFoundError)
     async def service_not_found(request: Request, exc: ServiceNotFoundError) -> JSONResponse:

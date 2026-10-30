@@ -12,6 +12,11 @@ class JsonFormatter(logging.Formatter):
                 "level": record.levelname,
                 "logger": record.name,
                 "message": record.getMessage(),
+                **{
+                    key: getattr(record, key)
+                    for key in ("run_id", "service_id", "check_status", "response_time_ms")
+                    if hasattr(record, key)
+                },
             }
         )
 
@@ -31,6 +36,7 @@ def configure_logging(level: str) -> None:
             },
             "root": {"handlers": ["console"], "level": level},
             "loggers": {
+                "httpcore": {"handlers": [], "propagate": True, "level": "WARNING"},
                 "uvicorn": {"handlers": [], "propagate": True},
                 "uvicorn.error": {"handlers": [], "propagate": True},
                 "uvicorn.access": {"handlers": [], "propagate": True},
