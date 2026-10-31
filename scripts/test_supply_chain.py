@@ -98,6 +98,64 @@ class DependencyPolicyTests(unittest.TestCase):
 
 
 class WorkflowPolicyTests(unittest.TestCase):
+    def test_informational_handoff_uses_real_outcomes_without_weakening_required_steps(
+        self,
+    ) -> None:
+        doc = policy.yaml_document(
+            policy.ROOT, policy.ROOT / ".github/workflows/ci.yml"
+        )
+        jobs = doc["jobs"]
+        docker = jobs["docker-build"]
+        steps = {s["id"]: s for s in docker["steps"] if "id" in s}
+        tolerated = {s.get("id") for s in docker["steps"] if s.get("continue-on-error")}
+        self.assertEqual(tolerated, {"image_export", "image_upload"})
+        self.assertNotIn("continue-on-error", docker)
+        for stage in ("image_export", "image_upload"):
+            self.assertEqual(
+                docker["outputs"][stage], "${{ steps." + stage + ".outcome }}"
+            )
+            self.assertIs(steps[stage]["continue-on-error"], True)
+        self.assertEqual(
+            steps["image_upload"]["if"],
+            "${{ success() && steps.image_export.outcome == 'success' }}",
+        )
+        required = next(
+            s
+            for s in docker["steps"]
+            if s["name"] == "Build inspect and smoke runtime images without publishing"
+        )
+        self.assertNotIn("continue-on-error", required)
+        self.assertNotIn("--audit-archives", required["run"])
+        self.assertIn("--retain-images", required["run"])
+        cleanup = next(
+            s
+            for s in docker["steps"]
+            if s["name"] == "Clean up only owned containers and image tags"
+        )
+        self.assertEqual(cleanup["if"], "${{ always() }}")
+        self.assertNotIn("continue-on-error", cleanup)
+        self.assertLess(
+            docker["steps"].index(steps["image_export"]), docker["steps"].index(cleanup)
+        )
+        audit_job = jobs["vulnerability-audit"]
+        self.assertNotIn("continue-on-error", audit_job)
+        self.assertFalse(any(s.get("continue-on-error") for s in audit_job["steps"]))
+        download = next(s for s in audit_job["steps"] if s.get("id") == "images")
+        self.assertNotIn("name", download["with"])
+        self.assertEqual(
+            download["with"]["pattern"], steps["image_upload"]["with"]["name"]
+        )
+        self.assertEqual(download["with"]["digest-mismatch"], "error")
+        self.assertIn(
+            "needs.docker-build.outputs.image_upload == 'success'", download["if"]
+        )
+        run = next(
+            s for s in audit_job["steps"] if "--preparation-result" in s.get("run", "")
+        )
+        for output in ("image_export", "image_upload"):
+            self.assertIn("needs.docker-build.outputs." + output, run["run"])
+        self.assertIn("steps.images.outcome", run["run"])
+
     def workflow(self) -> dict:
         return {
             "on": {"push": {}},

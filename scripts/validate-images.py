@@ -605,6 +605,7 @@ def main() -> None:
     parser.add_argument("--schema", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--cleanup", action="store_true")
+    parser.add_argument("--retain-images", action="store_true")
     args = parser.parse_args()
     if not args.cleanup and (args.schema is None or args.report is None):
         parser.error("--schema and --report are required for validation")
@@ -624,12 +625,20 @@ def main() -> None:
     except BaseException as error:
         logger.exception("Image validation or container cleanup failed")
         failure = error
-    try:
-        cleanup_images(project)
-    except Exception:
-        logger.exception("Image cleanup failed")
-        if failure is None:
-            raise
+    if args.retain_images and failure is None and not args.cleanup:
+        # Container cleanup already passed. Only the CI's separate export step
+        # needs these tags; its mandatory always() cleanup removes them afterward.
+        print(
+            "Owned images retained for separate handoff; required cleanup follows",
+            flush=True,
+        )
+    else:
+        try:
+            cleanup_images(project)
+        except Exception:
+            logger.exception("Image cleanup failed")
+            if failure is None:
+                raise
     if failure is not None:
         raise failure
 

@@ -142,6 +142,54 @@ class ImageArchiveTests(unittest.TestCase):
             {"files": 1},
         )
 
+    def test_required_validation_retains_only_successful_images_for_separate_export(
+        self,
+    ) -> None:
+        main = MODULE["main"]
+        for code in (None, 17):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
+                project = MagicMock()
+                project.name = "infrapulse-images-unit"
+                project.env = {}
+                project.compose = []
+                project.__exit__.return_value = False
+                failure = (
+                    subprocess.CalledProcessError(code, ["build"]) if code else None
+                )
+                cleanup = Mock()
+                with (
+                    patch.dict(
+                        main.__globals__,
+                        {
+                            "IntegrationProject": Mock(return_value=project),
+                            "validate": Mock(side_effect=failure),
+                            "cleanup_images": cleanup,
+                        },
+                    ),
+                    patch(
+                        "sys.argv",
+                        [
+                            "validate-images.py",
+                            "--schema",
+                            directory + "/schema.json",
+                            "--report",
+                            directory + "/report.json",
+                            "--retain-images",
+                        ],
+                    ),
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(io.StringIO()),
+                ):
+                    if failure:
+                        with self.assertRaises(subprocess.CalledProcessError) as raised:
+                            main()
+                        self.assertIs(raised.exception, failure)
+                        cleanup.assert_called_once_with(project)
+                    else:
+                        main()
+                        cleanup.assert_not_called()
+                project.__exit__.assert_called_once()
+
 
 class TypeContractTests(unittest.TestCase):
     def invoke(
