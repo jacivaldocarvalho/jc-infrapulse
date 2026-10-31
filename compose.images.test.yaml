@@ -1,0 +1,41 @@
+# Runtime image smoke only: no database, published ports, network, or host mounts.
+services:
+  api:
+    image: ${IMAGE_BACKEND:?Built runtime image required}
+    environment: &backend-env
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '1'
+      POSTGRES_PASSWORD: ${INFRAPULSE_TEST_PASSWORD:?Ephemeral password required}
+      DB_CONNECT_TIMEOUT: '1'
+      METRICS_ENABLED: 'false'
+      TELEMETRY_ENABLED: 'false'
+    network_mode: none
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  worker:
+    image: ${IMAGE_BACKEND:?Built runtime image required}
+    command: [python, -m, app.worker]
+    environment: *backend-env
+    network_mode: none
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  frontend:
+    image: ${IMAGE_FRONTEND:?Built runtime image required}
+    # Nginx resolves the unused proxy upstream at startup. No API traffic is tested.
+    extra_hosts: [api:127.0.0.1]
+    network_mode: none
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  build-inspection:
+    image: ${IMAGE_FRONTEND_BUILD:?Built frontend stage required}
+    profiles: [inspection]
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
