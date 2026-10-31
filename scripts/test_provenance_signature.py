@@ -79,9 +79,10 @@ class SignatureTests(unittest.TestCase):
         return stack
 
     def verify(self, policy_hash: str | None = None) -> dict[str, str]:
-        with self.verifier_mocks(), patch.object(
-            signature, "_run_cosign"
-        ) as run_cosign:
+        with (
+            self.verifier_mocks(),
+            patch.object(signature, "_run_cosign") as run_cosign,
+        ):
             result = signature.verify_signature(
                 self.statement,
                 self.bundle,
@@ -99,9 +100,10 @@ class SignatureTests(unittest.TestCase):
             return result
 
     def test_valid_signature_reports_separate_states_and_uses_policy_key(self) -> None:
-        with self.verifier_mocks(), patch.object(
-            signature, "_run_cosign"
-        ) as run_cosign:
+        with (
+            self.verifier_mocks(),
+            patch.object(signature, "_run_cosign") as run_cosign,
+        ):
             result = signature.verify_signature(
                 self.statement,
                 self.bundle,
@@ -127,9 +129,11 @@ class SignatureTests(unittest.TestCase):
             self.assertNotIn(str(self.key_id), args)
 
     def test_policy_tampering_and_unknown_key_fail_closed(self) -> None:
-        with patch.object(signature, "verify_cosign"), patch.object(
-            signature.provenance, "verify"
-        ), patch.object(signature, "_run_cosign") as run_cosign:
+        with (
+            patch.object(signature, "verify_cosign"),
+            patch.object(signature.provenance, "verify"),
+            patch.object(signature, "_run_cosign") as run_cosign,
+        ):
             with self.assertRaisesRegex(ValueError, "policy SHA-256"):
                 signature.verify_signature(
                     self.statement,
@@ -168,11 +172,15 @@ class SignatureTests(unittest.TestCase):
             signature._trusted_key(self.policy, digest, self.key_id)
 
     def test_statement_change_is_rejected_by_integrity_before_cosign(self) -> None:
-        with patch.object(signature, "verify_cosign"), patch.object(
-            signature.provenance,
-            "verify",
-            side_effect=ValueError("statement does not match manifest"),
-        ), patch.object(signature, "_run_cosign") as run_cosign:
+        with (
+            patch.object(signature, "verify_cosign"),
+            patch.object(
+                signature.provenance,
+                "verify",
+                side_effect=ValueError("statement does not match manifest"),
+            ),
+            patch.object(signature, "_run_cosign") as run_cosign,
+        ):
             self.statement.write_text('{"_type":"tampered"}')
             with self.assertRaisesRegex(ValueError, "statement does not match"):
                 signature.verify_signature(
@@ -188,7 +196,9 @@ class SignatureTests(unittest.TestCase):
                 )
             run_cosign.assert_not_called()
 
-    def test_byte_tampering_of_statement_or_bundle_fails_cosign_verification(self) -> None:
+    def test_byte_tampering_of_statement_or_bundle_fails_cosign_verification(
+        self,
+    ) -> None:
         for target, changed in (
             (self.statement, b'{  "_type": "test", "subject": [] }\n'),
             (self.bundle, b'{"test":"replaced bundle"}'),
@@ -196,11 +206,17 @@ class SignatureTests(unittest.TestCase):
             with self.subTest(target=target.name):
                 original = target.read_bytes()
                 target.write_bytes(changed)
-                with self.verifier_mocks(), patch.object(
-                    signature,
-                    "_run_cosign",
-                    side_effect=ValueError("Cosign signature verification failed"),
-                ), self.assertRaisesRegex(ValueError, "Cosign signature verification failed"):
+                with (
+                    self.verifier_mocks(),
+                    patch.object(
+                        signature,
+                        "_run_cosign",
+                        side_effect=ValueError("Cosign signature verification failed"),
+                    ),
+                    self.assertRaisesRegex(
+                        ValueError, "Cosign signature verification failed"
+                    ),
+                ):
                     signature.verify_signature(
                         self.statement,
                         self.bundle,
@@ -215,9 +231,15 @@ class SignatureTests(unittest.TestCase):
                 target.write_bytes(original)
 
     def test_cosign_failure_never_falls_back_to_hash_only(self) -> None:
-        with self.verifier_mocks(), patch.object(
-            signature, "_run_cosign", side_effect=ValueError("Cosign operation failed")
-        ), self.assertRaisesRegex(ValueError, "Cosign operation failed"):
+        with (
+            self.verifier_mocks(),
+            patch.object(
+                signature,
+                "_run_cosign",
+                side_effect=ValueError("Cosign operation failed"),
+            ),
+            self.assertRaisesRegex(ValueError, "Cosign operation failed"),
+        ):
             signature.verify_signature(
                 self.statement,
                 self.bundle,
@@ -246,7 +268,9 @@ class SignatureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             signature._trusted_key(self.policy, "bad", self.key_id)
 
-    def test_signs_exact_verified_statement_and_preserves_output_on_failure(self) -> None:
+    def test_signs_exact_verified_statement_and_preserves_output_on_failure(
+        self,
+    ) -> None:
         bundle = self.root / "new-bundle.json"
         observed: list[bytes] = []
 
@@ -258,10 +282,11 @@ class SignatureTests(unittest.TestCase):
                 bundle_temp.write_text('{"mediaType":"test"}')
             return b"GitVersion: v3.1.3\n"
 
-        with patch.object(signature, "verify_cosign"), patch.object(
-            signature.provenance, "verify"
-        ), patch.object(signature.sbom, "check_output"), patch.object(
-            signature, "_run_cosign", side_effect=fake_cosign
+        with (
+            patch.object(signature, "verify_cosign"),
+            patch.object(signature.provenance, "verify"),
+            patch.object(signature.sbom, "check_output"),
+            patch.object(signature, "_run_cosign", side_effect=fake_cosign),
         ):
             signature.sign_statement(
                 self.statement,
@@ -276,13 +301,17 @@ class SignatureTests(unittest.TestCase):
         self.assertEqual(json.loads(bundle.read_text()), {"mediaType": "test"})
 
         bundle.write_text("keep")
-        with patch.object(signature, "verify_cosign"), patch.object(
-            signature.provenance, "verify"
-        ), patch.object(signature.sbom, "check_output"), patch.object(
-            signature,
-            "_run_cosign",
-            side_effect=ValueError("Cosign operation failed"),
-        ), self.assertRaises(ValueError):
+        with (
+            patch.object(signature, "verify_cosign"),
+            patch.object(signature.provenance, "verify"),
+            patch.object(signature.sbom, "check_output"),
+            patch.object(
+                signature,
+                "_run_cosign",
+                side_effect=ValueError("Cosign operation failed"),
+            ),
+            self.assertRaises(ValueError),
+        ):
             signature.sign_statement(
                 self.statement,
                 bundle,
@@ -305,27 +334,39 @@ class SignatureTests(unittest.TestCase):
         }
         lock_path = self.root / "lock.json"
         lock_path.write_text(json.dumps(lock))
-        with patch.object(signature, "COSIGN_LOCK", lock_path), patch.object(
-            signature.subprocess,
-            "run",
-            return_value=subprocess.CompletedProcess([], 0, "GitVersion: v3.1.3\n", ""),
-        ) as run:
+        with (
+            patch.object(signature, "COSIGN_LOCK", lock_path),
+            patch.object(
+                signature.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    [], 0, "GitVersion: v3.1.3\n", ""
+                ),
+            ) as run,
+        ):
             signature.verify_cosign(self.cosign)
             self.assertIn("version", run.call_args.args[0])
         lock["sha256"] = "0" * 64
         lock_path.write_text(json.dumps(lock))
-        with patch.object(signature, "COSIGN_LOCK", lock_path), self.assertRaisesRegex(
-            ValueError, "SHA-256"
+        with (
+            patch.object(signature, "COSIGN_LOCK", lock_path),
+            self.assertRaisesRegex(ValueError, "SHA-256"),
         ):
             signature.verify_cosign(self.cosign)
         lock["sha256"] = digest
         lock["version"] = "3.1.2"
         lock_path.write_text(json.dumps(lock))
-        with patch.object(signature, "COSIGN_LOCK", lock_path), patch.object(
-            signature.subprocess,
-            "run",
-            return_value=subprocess.CompletedProcess([], 0, "GitVersion: v3.1.3\n", ""),
-        ), self.assertRaisesRegex(ValueError, "version mismatch"):
+        with (
+            patch.object(signature, "COSIGN_LOCK", lock_path),
+            patch.object(
+                signature.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess(
+                    [], 0, "GitVersion: v3.1.3\n", ""
+                ),
+            ),
+            self.assertRaisesRegex(ValueError, "version mismatch"),
+        ):
             signature.verify_cosign(self.cosign)
 
 

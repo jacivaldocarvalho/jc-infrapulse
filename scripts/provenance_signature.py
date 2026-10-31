@@ -64,10 +64,15 @@ def _open_regular(path: Path, limit: int) -> tuple[int, bytes]:
                 chunks.extend(block)
             after = os.fstat(fd)
             current = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
-            if len(chunks) > limit or (before.st_dev, before.st_ino) != (
-                after.st_dev,
-                after.st_ino,
-            ) or (after.st_dev, after.st_ino) != (current.st_dev, current.st_ino):
+            if (
+                len(chunks) > limit
+                or (before.st_dev, before.st_ino)
+                != (
+                    after.st_dev,
+                    after.st_ino,
+                )
+                or (after.st_dev, after.st_ino) != (current.st_dev, current.st_ino)
+            ):
                 raise ValueError("Input changed or exceeded its size limit")
             return fd, bytes(chunks)
         except BaseException:
@@ -125,9 +130,7 @@ def _run_cosign(tool: Path, arguments: list[str], timeout: int = 120) -> bytes:
             env={**os.environ, "COSIGN_EXPERIMENTAL": "0"},
             pass_fds=(fd,),
         )
-        match = re.search(
-            r"(?m)^GitVersion:\s*v?(\d+\.\d+\.\d+)\s*$", result.stdout
-        )
+        match = re.search(r"(?m)^GitVersion:\s*v?(\d+\.\d+\.\d+)\s*$", result.stdout)
         if not match or match.group(1) != lock["version"].removeprefix("v"):
             raise ValueError("Cosign version mismatch")
         if not arguments:
@@ -160,9 +163,7 @@ def _validate_provenance(
     expected_image_id: str | None,
 ) -> bytes:
     raw, document = _json_file(statement_path, MAX_STATEMENT_BYTES)
-    provenance.verify(
-        document, sbom_path, manifest_path, trivy_path, expected_image_id
-    )
+    provenance.verify(document, sbom_path, manifest_path, trivy_path, expected_image_id)
     return raw
 
 
@@ -193,7 +194,9 @@ def sign_statement(
     ) as work:
         temporary = Path(work) / "bundle.sigstore.json"
         sbom.check_output(temporary, inputs)
-        with tempfile.TemporaryDirectory(prefix="infrapulse-cosign-sign-") as snapshot_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="infrapulse-cosign-sign-"
+        ) as snapshot_dir:
             snapshot = Path(snapshot_dir) / "statement.json"
             private = Path(snapshot_dir) / "private.key"
             snapshot.write_bytes(statement_bytes)
@@ -240,10 +243,7 @@ def _trusted_key(policy_path: Path, expected_policy_sha256: str, key_id: str) ->
         raise ValueError("Invalid trusted public key")
     key_bytes = pem.encode("ascii", errors="strict")
     key_hash = hashlib.sha256(key_bytes).hexdigest()
-    if (
-        key["sha256"] != key_hash
-        or key_id != f"sha256:{key_hash}"
-    ):
+    if key["sha256"] != key_hash or key_id != f"sha256:{key_hash}":
         raise ValueError("Trusted key fingerprint mismatch")
     return key_bytes
 
