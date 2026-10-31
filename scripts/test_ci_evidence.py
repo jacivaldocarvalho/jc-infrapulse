@@ -1,5 +1,9 @@
 """Focused regressions for CI evidence assembly and fail-closed coverage."""
 
+import contextlib
+import io
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +14,50 @@ import sbom
 
 
 class CiEvidenceTests(unittest.TestCase):
+    def test_image_root_failure_emits_compatible_structured_diagnostic(self) -> None:
+        error = ci_evidence.provenance.ImageRootValidationError(
+            "SBOM_ROOT_PURL_DIGEST_MISMATCH",
+            "purl-digest",
+            "expected-local-image-id",
+            "different-sha256-digest",
+            "backend-image",
+            "sha256:" + "a" * 64,
+        )
+        stderr = io.StringIO()
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "ci_evidence",
+                    "--output",
+                    "out",
+                    "--handoff",
+                    "handoff",
+                    "--trivy",
+                    "trivy",
+                    "--commit",
+                    "a" * 40,
+                    "--run-id",
+                    "1",
+                    "--run-attempt",
+                    "1",
+                    "--repository",
+                    "example/repo",
+                    "--workflow",
+                    "ci",
+                ],
+            ),
+            patch.object(ci_evidence, "generate_evidence", side_effect=error),
+            contextlib.redirect_stderr(stderr),
+        ):
+            self.assertEqual(ci_evidence.main(), 1)
+        result = json.loads(stderr.getvalue())
+        self.assertEqual(result["status"], "ERROR")
+        self.assertEqual(result["error"], "Invalid image SBOM root")
+        self.assertEqual(result["diagnostic"]["image"], "backend-image")
+        self.assertEqual(result["diagnostic"]["code"], "SBOM_ROOT_PURL_DIGEST_MISMATCH")
+
     def _generate_one_with_persisted_statement(
         self,
         persisted: bytes,

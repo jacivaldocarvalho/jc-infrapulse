@@ -379,6 +379,67 @@ class ProvenanceTests(unittest.TestCase):
         ):
             provenance.verify_image(doc, manifest, self.tool, image_id)
 
+    def test_image_root_diagnostics_identify_failed_condition(self) -> None:
+        image_id = "sha256:" + "a" * 64
+        valid_root = {
+            "type": "container",
+            "name": image_id,
+            "bom-ref": "root",
+            "purl": f"pkg:oci/local@{image_id}?arch=amd64",
+        }
+        cases = (
+            (
+                "type",
+                {**valid_root, "type": "application"},
+                "SBOM_ROOT_TYPE_INVALID",
+                "type",
+            ),
+            (
+                "bom-ref",
+                {**valid_root, "bom-ref": ""},
+                "SBOM_ROOT_BOM_REF_MISSING",
+                "bom-ref",
+            ),
+            (
+                "purl",
+                {**valid_root, "purl": "pkg:docker/local"},
+                "SBOM_ROOT_PURL_INVALID",
+                "purl",
+            ),
+            (
+                "digest",
+                {**valid_root, "purl": "pkg:oci/local@sha256:" + "b" * 64},
+                "SBOM_ROOT_PURL_DIGEST_MISMATCH",
+                "purl-digest",
+            ),
+            (
+                "identity",
+                {**valid_root, "name": "private-registry/image:tag"},
+                "SBOM_ROOT_LOCAL_IDENTITY_MISMATCH",
+                "name",
+            ),
+        )
+        for _label, root, code, condition in cases:
+            with (
+                self.subTest(condition=condition),
+                self.assertRaises(provenance.ImageRootValidationError) as raised,
+            ):
+                provenance.normalized_inventory(
+                    {
+                        "metadata": {"component": root},
+                        "components": [],
+                        "dependencies": [],
+                    },
+                    image_id,
+                    image_name="backend-image",
+                )
+            diagnostic = raised.exception.diagnostic()
+            self.assertEqual(diagnostic["code"], code)
+            self.assertEqual(diagnostic["condition"], condition)
+            self.assertEqual(diagnostic["image"], "backend-image")
+            self.assertEqual(diagnostic["expected_local_image_id"], image_id)
+            self.assertNotIn("private-registry", json.dumps(diagnostic))
+
 
 if __name__ == "__main__":
     unittest.main()

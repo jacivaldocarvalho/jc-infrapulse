@@ -178,7 +178,13 @@ def generate_one(
     if source is not None and material.get("sha256") != generation.get("source_sha256"):
         raise ValueError(f"{name}: source material digest changed during generation")
     write_json(manifest_path, generation)
-    document = provenance.statement(sbom_path, manifest_path, tool, image_id)
+    document = provenance.statement(
+        sbom_path,
+        manifest_path,
+        tool,
+        image_id,
+        image_name=name if kind == "image" else None,
+    )
     source_inputs = [sbom_path, manifest_path, tool]
     if source is not None:
         source_inputs.append(source)
@@ -190,6 +196,7 @@ def generate_one(
         manifest_path,
         tool,
         expected_image=image_id,
+        image_name=name if kind == "image" else None,
     )
     if sbom.digest(sbom_path) != generation.get("sha256"):
         raise ValueError(f"{name}: SBOM digest mismatch after validation")
@@ -362,7 +369,10 @@ def main() -> int:
         ValidationError,
         RefResolutionError,
     ) as exc:
-        print(json.dumps({"status": "ERROR", "error": str(exc)}), file=sys.stderr)
+        result = {"status": "ERROR", "error": str(exc)}
+        if isinstance(exc, provenance.ImageRootValidationError):
+            result["diagnostic"] = exc.diagnostic()
+        print(json.dumps(result), file=sys.stderr)
         return 1
     print(
         json.dumps(

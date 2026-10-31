@@ -18,21 +18,149 @@ from jsonschema.exceptions import RefResolutionError, ValidationError
 TYPE = "https://in-toto.io/Statement/v1"
 PREDICATE = "https://slsa.dev/provenance/v1"
 BUILD_TYPE = "https://github.com/jacivaldocarvalho/jc-infrapulse/blob/develop/docs/provenance-f3b1.md#local-sbom"
+IMAGE_LABEL = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
-def normalized_inventory(doc: dict, image_id: str) -> tuple[Counter, Counter]:
-    root = doc.get("metadata", {}).get("component", {})
+class ImageRootValidationError(ValueError):
+    """Fail-closed image root error with safe, structured diagnostic fields."""
+
+    def __init__(
+        self,
+        code: str,
+        condition: str,
+        expected: str,
+        observed: str,
+        image_name: str | None,
+        image_id: str | None,
+        message: str = "Invalid image SBOM root",
+    ) -> None:
+        self.code = code
+        self.condition = condition
+        self.expected = expected
+        self.observed = observed
+        self.image_name = (
+            image_name
+            if image_name and IMAGE_LABEL.fullmatch(image_name)
+            else "unknown-image"
+        )
+        self.image_id = (
+            image_id
+            if isinstance(image_id, str)
+            and re.fullmatch(r"sha256:[a-f0-9]{64}", image_id)
+            else "invalid-or-unavailable"
+        )
+        super().__init__(message)
+
+    def diagnostic(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "image": self.image_name,
+            "condition": self.condition,
+            "expected": self.expected,
+            "observed": self.observed,
+            "expected_local_image_id": self.image_id,
+        }
+
+
+def _observed_type(value: object) -> str:
+    if value is None:
+        return "missing"
+    if isinstance(value, str) and value in {
+        "application",
+        "container",
+        "cryptographic-asset",
+        "data",
+        "device",
+        "file",
+        "firmware",
+        "framework",
+        "library",
+        "machine-learning-model",
+        "operating-system",
+    }:
+        return value
+    return "invalid-value"
+
+
+def normalized_inventory(
+    doc: dict, image_id: str, image_name: str | None = None
+) -> tuple[Counter, Counter]:
+    metadata = doc.get("metadata")
+    root = metadata.get("component") if isinstance(metadata, dict) else None
+    if not isinstance(root, dict):
+        raise ImageRootValidationError(
+            "SBOM_ROOT_COMPONENT_INVALID",
+            "metadata.component",
+            "object",
+            "missing-or-invalid",
+            image_name,
+            image_id,
+        )
+    observed_type = root.get("type")
+    if observed_type != "container":
+        raise ImageRootValidationError(
+            "SBOM_ROOT_TYPE_INVALID",
+            "type",
+            "container",
+            _observed_type(observed_type),
+            image_name,
+            image_id,
+        )
+    if root.get("name") != image_id:
+        raise ImageRootValidationError(
+            "SBOM_ROOT_LOCAL_IDENTITY_MISMATCH",
+            "name",
+            "expected-local-image-id",
+            "mismatch",
+            image_name,
+            image_id,
+        )
+    if not root.get("bom-ref"):
+        raise ImageRootValidationError(
+            "SBOM_ROOT_BOM_REF_MISSING",
+            "bom-ref",
+            "non-empty",
+            "missing-or-empty",
+            image_name,
+            image_id,
+        )
     root_purl = root.get("purl", "")
-    if (
-        root.get("type") != "container"
-        or root.get("name") != image_id
-        or not root.get("bom-ref")
-        or not isinstance(root_purl, str)
-        or not root_purl.startswith("pkg:oci/")
-        or "@" not in root_purl
-        or root_purl.split("@", 1)[1].split("?", 1)[0] != image_id
-    ):
-        raise ValueError("Invalid image SBOM root")
+    if not isinstance(root_purl, str):
+        purl_state = "non-string"
+    elif not root_purl.startswith("pkg:oci/"):
+        purl_state = "not-pkg-oci"
+    elif "@" not in root_purl:
+        purl_state = "digest-missing"
+    else:
+        purl_state = "valid-oci-shape"
+    if purl_state != "valid-oci-shape":
+        raise ImageRootValidationError(
+            "SBOM_ROOT_PURL_INVALID",
+            "purl",
+            "pkg:oci/<name>@sha256:<digest>",
+            purl_state,
+            image_name,
+            image_id,
+        )
+    purl_digest = root_purl.split("@", 1)[1].split("?", 1)[0]
+    if not re.fullmatch(r"sha256:[a-f0-9]{64}", purl_digest):
+        raise ImageRootValidationError(
+            "SBOM_ROOT_PURL_DIGEST_INVALID",
+            "purl-digest",
+            "sha256:<64 lowercase hex characters>",
+            "not-sha256-digest",
+            image_name,
+            image_id,
+        )
+    if purl_digest != image_id:
+        raise ImageRootValidationError(
+            "SBOM_ROOT_PURL_DIGEST_MISMATCH",
+            "purl-digest",
+            "expected-local-image-id",
+            "different-sha256-digest",
+            image_name,
+            image_id,
+        )
     if (
         not isinstance(doc.get("components"), list)
         or not doc["components"]
@@ -93,12 +221,24 @@ def normalized_inventory(doc: dict, image_id: str) -> tuple[Counter, Counter]:
 
 
 def verify_image(
-    doc: dict, manifest: dict, tool: Path, expected_id: str | None
+    doc: dict,
+    manifest: dict,
+    tool: Path,
+    expected_id: str | None,
+    image_name: str | None = None,
 ) -> None:
     if not isinstance(expected_id, str) or not re.fullmatch(
         r"sha256:[a-f0-9]{64}", expected_id
     ):
-        raise ValueError("Independent full image ID is required")
+        raise ImageRootValidationError(
+            "SBOM_EXPECTED_LOCAL_IMAGE_ID_INVALID",
+            "expected-local-image-id",
+            "sha256:<64 lowercase hex characters>",
+            "missing-or-invalid",
+            image_name,
+            None,
+            "Independent full image ID is required",
+        )
     if (
         manifest.get("image_id") != expected_id
         or manifest.get("status") != "COVERAGE_PARTIAL"
@@ -108,7 +248,7 @@ def verify_image(
     identity = sbom.resolve_image(expected_id)
     if identity.get("image_id") != expected_id:
         raise ValueError("Expected local image unavailable")
-    original = normalized_inventory(doc, expected_id)
+    original = normalized_inventory(doc, expected_id, image_name)
     with tempfile.TemporaryDirectory(prefix="infrapulse-verify-image-") as directory:
         generated = Path(directory) / "fresh.json"
         report = sbom.generate_image(tool, expected_id, generated)
@@ -121,7 +261,7 @@ def verify_image(
         fresh = sbom.validate(generated, report["sha256"])
         if (
             report.get("components") != len(fresh.get("components", []))
-            or normalized_inventory(fresh, expected_id) != original
+            or normalized_inventory(fresh, expected_id, image_name) != original
         ):
             raise ValueError("Image inventory mismatch")
     if sbom.resolve_image(expected_id).get("image_id") != expected_id:
@@ -205,7 +345,11 @@ def verify_inventory(source: str, source_hash: str, doc: dict, manifest: dict) -
 
 
 def statement(
-    artifact: Path, manifest_path: Path, tool: Path, expected_image: str | None = None
+    artifact: Path,
+    manifest_path: Path,
+    tool: Path,
+    expected_image: str | None = None,
+    image_name: str | None = None,
 ) -> dict:
     manifest = json.loads(manifest_path.read_text())
     if not isinstance(manifest, dict) or manifest.get("generation_status") != "SUCCESS":
@@ -262,7 +406,7 @@ def statement(
         )
         parameters["source"] = str(source.resolve())
     elif manifest.get("image_id"):
-        verify_image(doc, manifest, tool, expected_image)
+        verify_image(doc, manifest, tool, expected_image, image_name)
         parameters["imageId"] = expected_image
         parameters["imageReference"] = manifest.get("reference")
     else:
@@ -298,8 +442,9 @@ def verify(
     manifest: Path,
     tool: Path,
     expected_image: str | None = None,
+    image_name: str | None = None,
 ) -> None:
-    expected = statement(artifact, manifest, tool, expected_image)
+    expected = statement(artifact, manifest, tool, expected_image, image_name)
     if document != expected:
         raise ValueError("Statement differs from verified local evidence")
 
@@ -367,7 +512,10 @@ def main() -> int:
         ValidationError,
         RefResolutionError,
     ) as exc:
-        print(json.dumps({"status": "ERROR", "error": str(exc)}))
+        result = {"status": "ERROR", "error": str(exc)}
+        if isinstance(exc, ImageRootValidationError):
+            result["diagnostic"] = exc.diagnostic()
+        print(json.dumps(result))
         return 1
     print(json.dumps({"status": "INTEGRITY_VERIFIED", "authenticity": "NOT_VERIFIED"}))
     return 0
