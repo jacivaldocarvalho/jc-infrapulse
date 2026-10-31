@@ -112,8 +112,17 @@ class SbomTests(unittest.TestCase):
 
     def test_image_partial_and_failures(self) -> None:
         image_id = "sha256:" + "a" * 64
-        self.document["metadata"]["component"]["name"] = image_id
+        self.document["metadata"]["component"].update(
+            name=image_id, type="container", **{"bom-ref": "image-root"}
+        )
+        self.document["components"][0]["bom-ref"] = "component-one"
+        self.document["dependencies"] = [
+            {"ref": "image-root", "dependsOn": ["component-one"]},
+            {"ref": "component-one", "dependsOn": []},
+        ]
         self.write()
+        expected_components = json.loads(json.dumps(self.document["components"]))
+        expected_dependencies = json.loads(json.dumps(self.document["dependencies"]))
 
         def fake_run(command: list[str]) -> subprocess.CompletedProcess[str]:
             if command[0] == "git":
@@ -133,17 +142,89 @@ class SbomTests(unittest.TestCase):
             patch.object(sbom, "resolve_image", return_value=identity),
             patch.object(sbom, "run", side_effect=fake_run),
         ):
-            output = self.path.parent / "out.json"
-            report = sbom.generate_image(self.path, "test", output)
-            self.assertEqual(report["status"], "COVERAGE_PARTIAL")
-            self.assertEqual(report["components"], 1)
+            outputs = {}
+            for image_name in ("backend-image", "nginx-image"):
+                output = self.path.parent / f"{image_name}.json"
+                report = sbom.generate_image(
+                    self.path, "test", output, image_name=image_name
+                )
+                generated = sbom.validate(output, report["sha256"])
+                self.assertEqual(report["status"], "COVERAGE_PARTIAL")
+                self.assertEqual(report["components"], 1)
+                self.assertEqual(
+                    generated["metadata"]["component"]["purl"],
+                    f"pkg:oci/{image_name}@{image_id}",
+                )
+                self.assertEqual(generated["components"], expected_components)
+                self.assertEqual(generated["dependencies"], expected_dependencies)
+                outputs[image_name] = output
             self.document["metadata"]["component"]["name"] = "wrong"
             with self.assertRaises(ValueError):
-                sbom.generate_image(self.path, "test", output)
+                sbom.generate_image(
+                    self.path,
+                    "test",
+                    outputs["backend-image"],
+                    image_name="backend-image",
+                )
             self.document["metadata"]["component"]["name"] = image_id
+            for purl in (
+                "pkg:docker/backend-image@" + image_id,
+                "pkg:oci/other@" + image_id,
+                "pkg:oci/backend-image@sha256:" + "b" * 64,
+            ):
+                self.document["metadata"]["component"]["purl"] = purl
+                with (
+                    self.subTest(purl=purl.split("@", 1)[0]),
+                    self.assertRaises(ValueError),
+                ):
+                    sbom.generate_image(
+                        self.path,
+                        "test",
+                        outputs["backend-image"],
+                        image_name="backend-image",
+                    )
+            self.document["metadata"]["component"].pop("purl")
             self.document["components"] = []
             with self.assertRaises(ValueError):
-                sbom.generate_image(self.path, "test", output)
+                sbom.generate_image(
+                    self.path,
+                    "test",
+                    outputs["backend-image"],
+                    image_name="backend-image",
+                )
+
+    def test_existing_image_purl_syntax(self) -> None:
+        image_id = "sha256:" + "a" * 64
+        root = {
+            "type": "container",
+            "name": image_id,
+            "bom-ref": "image-root",
+        }
+        document = {"metadata": {"component": root}}
+        expected = f"pkg:oci/backend-image@{image_id}"
+
+        for purl in (expected, expected + "?arch=amd64"):
+            with self.subTest(purl=purl):
+                root["purl"] = purl
+                self.assertFalse(
+                    sbom._normalize_image_root_purl(document, image_id, "backend-image")
+                )
+                self.assertEqual(root["purl"], purl)
+
+        for purl in (
+            expected + "?!!!",
+            expected + "?arch=%ZZ",
+            expected + "?arch=%C3%28",
+            expected + "#sub/path",
+            expected + "?arch=amd64&ARCH=arm64",
+            f"pkg:oci/backend-image@sha256:{'b' * 64}",
+            None,
+            "",
+            7,
+        ):
+            with self.subTest(purl=purl), self.assertRaises(ValueError):
+                root["purl"] = purl
+                sbom._normalize_image_root_purl(document, image_id, "backend-image")
 
     def test_image_trivy_failure(self) -> None:
         identity = {"reference": "test", "image_id": "sha256:" + "a" * 64}

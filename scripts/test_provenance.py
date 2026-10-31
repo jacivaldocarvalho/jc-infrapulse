@@ -261,7 +261,7 @@ class ProvenanceTests(unittest.TestCase):
                     "type": "container",
                     "name": image_id,
                     "bom-ref": "root",
-                    "purl": f"pkg:oci/local@{image_id}?arch=amd64",
+                    "purl": f"pkg:oci/backend-image@{image_id}?arch=amd64",
                 }
             },
             "components": [
@@ -296,10 +296,19 @@ class ProvenanceTests(unittest.TestCase):
         }
         with (
             patch.object(sbom, "resolve_image", return_value={"image_id": image_id}),
-            patch.object(sbom, "generate_image", return_value=report),
+            patch.object(
+                sbom, "generate_image", return_value=report
+            ) as regenerate_image,
             patch.object(sbom, "validate", return_value=doc),
         ):
-            provenance.verify_image(doc, manifest, self.tool, image_id)
+            provenance.verify_image(
+                doc, manifest, self.tool, image_id, image_name="backend-image"
+            )
+            self.assertEqual(
+                regenerate_image.call_args.kwargs["image_name"], "backend-image"
+            )
+            with self.assertRaisesRegex(ValueError, "logical image name"):
+                provenance.verify_image(doc, manifest, self.tool, image_id)
             for change in (
                 "removed",
                 "extra",
@@ -350,18 +359,30 @@ class ProvenanceTests(unittest.TestCase):
                 }
                 with self.subTest(change=change), self.assertRaises(ValueError):
                     provenance.verify_image(
-                        altered, changed_manifest, self.tool, image_id
+                        altered,
+                        changed_manifest,
+                        self.tool,
+                        image_id,
+                        image_name="backend-image",
                     )
             for invalid in (None, "sha256:" + "b" * 64):
                 with self.assertRaises(ValueError):
-                    provenance.verify_image(doc, manifest, self.tool, invalid)
+                    provenance.verify_image(
+                        doc,
+                        manifest,
+                        self.tool,
+                        invalid,
+                        image_name="backend-image",
+                    )
         with (
             patch.object(
                 sbom, "resolve_image", return_value={"status": "COVERAGE_PENDING"}
             ),
             self.assertRaises(ValueError),
         ):
-            provenance.verify_image(doc, manifest, self.tool, image_id)
+            provenance.verify_image(
+                doc, manifest, self.tool, image_id, image_name="backend-image"
+            )
         with (
             patch.object(sbom, "resolve_image", return_value={"image_id": image_id}),
             patch.object(
@@ -369,7 +390,9 @@ class ProvenanceTests(unittest.TestCase):
             ),
             self.assertRaises(OSError),
         ):
-            provenance.verify_image(doc, manifest, self.tool, image_id)
+            provenance.verify_image(
+                doc, manifest, self.tool, image_id, image_name="backend-image"
+            )
         with (
             patch.object(sbom, "resolve_image", return_value={"image_id": image_id}),
             patch.object(
@@ -377,7 +400,9 @@ class ProvenanceTests(unittest.TestCase):
             ),
             self.assertRaises(ValueError),
         ):
-            provenance.verify_image(doc, manifest, self.tool, image_id)
+            provenance.verify_image(
+                doc, manifest, self.tool, image_id, image_name="backend-image"
+            )
 
     def test_image_root_diagnostics_identify_failed_condition(self) -> None:
         image_id = "sha256:" + "a" * 64

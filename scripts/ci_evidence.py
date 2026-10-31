@@ -161,7 +161,9 @@ def generate_one(
     if kind == "image":
         if image_id is None:
             raise ValueError(f"{name}: image ID is required")
-        generation = sbom.generate_image(tool, image_id, sbom_path)
+        if name not in IMAGE_TARGETS:
+            raise ValueError("Unexpected logical image name")
+        generation = sbom.generate_image(tool, image_id, sbom_path, image_name=name)
     else:
         if source is None:
             raise ValueError(f"{name}: lock source is required")

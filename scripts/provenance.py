@@ -336,6 +336,9 @@ def verify_image(
             None,
             "Independent full image ID is required",
         )
+    if image_name is None:
+        raise ValueError("Independent logical image name is required")
+    sbom.validate_image_name(image_name)
     if (
         manifest.get("image_id") != expected_id
         or manifest.get("status") != "COVERAGE_PARTIAL"
@@ -348,7 +351,9 @@ def verify_image(
     original = normalized_inventory(doc, expected_id, image_name, "ci-evidence-sbom")
     with tempfile.TemporaryDirectory(prefix="infrapulse-verify-image-") as directory:
         generated = Path(directory) / "fresh.json"
-        report = sbom.generate_image(tool, expected_id, generated)
+        report = sbom.generate_image(
+            tool, expected_id, generated, image_name=image_name
+        )
         if (
             report.get("generation_status") != "SUCCESS"
             or report.get("status") != "COVERAGE_PARTIAL"
@@ -584,11 +589,16 @@ def main() -> int:
     parser.add_argument(
         "--expected-image-id", help="Independent full local image ID (sha256:...)"
     )
+    parser.add_argument("--image-name", help="Validated logical image name")
     args = parser.parse_args()
     try:
         if args.action == "generate":
             doc = statement(
-                args.sbom, args.manifest, args.trivy, args.expected_image_id
+                args.sbom,
+                args.manifest,
+                args.trivy,
+                args.expected_image_id,
+                args.image_name,
             )
             source = json.loads(args.manifest.read_text()).get("source")
             inputs = [args.sbom, args.manifest, args.trivy]
@@ -602,6 +612,7 @@ def main() -> int:
                 args.manifest,
                 args.trivy,
                 args.expected_image_id,
+                args.image_name,
             )
     except (
         OSError,

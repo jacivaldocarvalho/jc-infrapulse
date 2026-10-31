@@ -25,6 +25,7 @@ HASHES = {
     "spdx.schema.json": "54a6288292bc6c90b0d3952f5f939f17436fa76704ffe68a46e5b78539c7cc1b",
 }
 PINS = json.loads((ROOT / "security/vulnerability-scanners.json").read_text())
+IMAGE_NAME_PATTERN = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*")
 
 
 def digest(path: Path) -> str:
@@ -338,7 +339,91 @@ def resolve_image(reference: str) -> dict:
     }
 
 
-def generate_image(tool: Path, reference: str, output: Path) -> dict:
+def validate_image_name(image_name: str | None) -> str:
+    if not isinstance(image_name, str) or not IMAGE_NAME_PATTERN.fullmatch(image_name):
+        raise ValueError("Invalid logical image name")
+    return image_name
+
+
+def _image_name_from_reference(reference: str, image_name: str | None) -> str:
+    if image_name is not None:
+        return validate_image_name(image_name)
+    if re.fullmatch(r"sha256:[a-f0-9]{64}", reference):
+        raise ValueError("Logical image name is required for an image ID reference")
+    name = reference.split("@", 1)[0].rsplit("/", 1)[-1]
+    if ":" in name:
+        name = name.rsplit(":", 1)[0]
+    return validate_image_name(name)
+
+
+def _normalize_image_root_purl(document: dict, image_id: str, image_name: str) -> bool:
+    root = document["metadata"]["component"]
+    if root.get("type") != "container":
+        raise ValueError("SBOM image root type mismatch")
+    if root.get("name") != image_id:
+        raise ValueError("SBOM image identity mismatch")
+    expected_prefix = f"pkg:oci/{image_name}@"
+    if "purl" not in root:
+        root["purl"] = f"{expected_prefix}{image_id}"
+        return True
+    purl = root["purl"]
+    if not isinstance(purl, str) or not purl.startswith(expected_prefix):
+        raise ValueError("Existing image root purl is invalid or divergent")
+    base, separator, qualifiers = purl.partition("?")
+    # The F3A OCI root contract identifies the whole image, so subpaths are
+    # unsupported. Qualifiers are accepted only in the generic PURL
+    # key=value form with valid percent-encoded UTF-8 values.
+    if "#" in purl or base != f"{expected_prefix}{image_id}":
+        raise ValueError("Existing image root purl digest is invalid or divergent")
+    if separator:
+        if not qualifiers:
+            raise ValueError("Existing image root purl qualifiers are invalid")
+        seen: set[str] = set()
+        for qualifier in qualifiers.split("&"):
+            key, equals, value = qualifier.partition("=")
+            if (
+                not equals
+                or not key
+                or not value
+                or not re.fullmatch(r"[A-Za-z0-9._-]+", key)
+                or not _valid_purl_component(value)
+                or key.casefold() in seen
+            ):
+                raise ValueError("Existing image root purl qualifiers are invalid")
+            seen.add(key.casefold())
+    return False
+
+
+def _valid_purl_component(value: str) -> bool:
+    """Accept PURL unreserved characters and valid percent-encoded UTF-8."""
+    index = 0
+    encoded = bytearray()
+    while index < len(value):
+        char = value[index]
+        if char in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~":
+            encoded.extend(char.encode("ascii"))
+            index += 1
+            continue
+        if char != "%" or index + 2 >= len(value):
+            return False
+        pair = value[index + 1 : index + 3]
+        if not re.fullmatch(r"[a-fA-F0-9]{2}", pair):
+            return False
+        encoded.append(int(pair, 16))
+        index += 3
+    try:
+        encoded.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def generate_image(
+    tool: Path,
+    reference: str,
+    output: Path,
+    image_name: str | None = None,
+) -> dict:
     started = time.monotonic()
     timestamp = datetime.now(UTC).isoformat()
     check_output(output, [tool])
@@ -346,6 +431,7 @@ def generate_image(tool: Path, reference: str, output: Path) -> dict:
     identity = resolve_image(reference)
     if identity.get("status") == "COVERAGE_PENDING":
         return identity
+    logical_name = _image_name_from_reference(reference, image_name)
     commit = run(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).stdout.strip()
     with tempfile.TemporaryDirectory(prefix="infrapulse-image-sbom-") as temporary:
         result = Path(temporary) / "sbom.json"
@@ -365,8 +451,9 @@ def generate_image(tool: Path, reference: str, output: Path) -> dict:
             ]
         )
         doc = validate(result)
-        if doc["metadata"]["component"].get("name") != identity["image_id"]:
-            raise ValueError("SBOM image identity mismatch")
+        if _normalize_image_root_purl(doc, identity["image_id"], logical_name):
+            result.write_text(json.dumps(doc, separators=(",", ":")) + "\n")
+            doc = validate(result)
         data = result.read_bytes()
     checksum = atomic_write(output, data, [tool])
     return {
@@ -393,12 +480,15 @@ def main() -> int:
     inputs.add_argument("--image")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--kind", choices=("python", "npm"))
+    parser.add_argument("--image-name")
     args = parser.parse_args()
     try:
         if args.image:
             if args.kind:
                 raise ValueError("--kind applies only to lockfiles")
-            manifest = generate_image(args.trivy, args.image, args.output)
+            manifest = generate_image(
+                args.trivy, args.image, args.output, args.image_name
+            )
         else:
             manifest = generate(args.trivy, args.source, args.output, args.kind)
     except (
