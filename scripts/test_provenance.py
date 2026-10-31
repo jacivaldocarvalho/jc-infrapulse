@@ -381,6 +381,7 @@ class ProvenanceTests(unittest.TestCase):
 
     def test_image_root_diagnostics_identify_failed_condition(self) -> None:
         image_id = "sha256:" + "a" * 64
+        observed_purl = f"pkg:docker/private.registry/internal/image@{image_id}"
         valid_root = {
             "type": "container",
             "name": image_id,
@@ -402,9 +403,15 @@ class ProvenanceTests(unittest.TestCase):
             ),
             (
                 "purl",
-                {**valid_root, "purl": "pkg:docker/local"},
+                {**valid_root, "purl": observed_purl},
                 "SBOM_ROOT_PURL_INVALID",
                 "purl",
+            ),
+            (
+                "malformed-digest",
+                {**valid_root, "purl": "pkg:oci/local@sha256:abc"},
+                "SBOM_ROOT_PURL_DIGEST_INVALID",
+                "purl-digest",
             ),
             (
                 "digest",
@@ -432,13 +439,24 @@ class ProvenanceTests(unittest.TestCase):
                     },
                     image_id,
                     image_name="backend-image",
+                    sbom_source="ci-evidence-sbom",
                 )
             diagnostic = raised.exception.diagnostic()
             self.assertEqual(diagnostic["code"], code)
             self.assertEqual(diagnostic["condition"], condition)
             self.assertEqual(diagnostic["image"], "backend-image")
             self.assertEqual(diagnostic["expected_local_image_id"], image_id)
-            self.assertNotIn("private-registry", json.dumps(diagnostic))
+            self.assertEqual(diagnostic["sbom_source"], "ci-evidence-sbom")
+            serialized = json.dumps(diagnostic)
+            self.assertNotIn(observed_purl, serialized)
+            self.assertNotIn("private.registry", serialized)
+            if condition == "purl":
+                self.assertEqual(diagnostic["root"]["purl"]["scheme"], "pkg")
+                self.assertEqual(diagnostic["root"]["purl"]["package_type"], "docker")
+                self.assertEqual(
+                    diagnostic["root"]["purl"]["digest_format"], "sha256-valid"
+                )
+                self.assertTrue(diagnostic["root"]["purl"]["digest_matches_expected"])
 
 
 if __name__ == "__main__":

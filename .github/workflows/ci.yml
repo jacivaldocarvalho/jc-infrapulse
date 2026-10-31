@@ -639,6 +639,60 @@ jobs:
             --run-attempt "$CI_RUN_ATTEMPT" \
             --repository "$CI_REPOSITORY" \
             --workflow "$CI_WORKFLOW"
+      - name: Check for sanitized image root diagnostics
+        id: root_diagnostic
+        if: ${{ always() }}
+        env:
+          EVIDENCE_OUTPUT: ${{ runner.temp }}/ci-evidence
+        run: |
+          if [[ -e "$EVIDENCE_OUTPUT" || -L "$EVIDENCE_OUTPUT" ]]; then
+            if [[ ! -d "$EVIDENCE_OUTPUT" || -L "$EVIDENCE_OUTPUT" ]]; then
+              echo "::error::Diagnostic output path is not a real directory."
+              exit 1
+            fi
+            shopt -s nullglob
+            for candidate in "$EVIDENCE_OUTPUT"/*-root-diagnostic.json; do
+              case "$candidate" in
+                "$EVIDENCE_OUTPUT/backend-image.root-diagnostic.json"|\
+                "$EVIDENCE_OUTPUT/nginx-image.root-diagnostic.json") ;;
+                *)
+                  echo "::error::Unexpected diagnostic artifact path."
+                  exit 1
+                  ;;
+              esac
+            done
+            diagnostic_paths=()
+            for image in backend-image nginx-image; do
+              diagnostic_path="$EVIDENCE_OUTPUT/${image}.root-diagnostic.json"
+              if [[ -e "$diagnostic_path" || -L "$diagnostic_path" ]]; then
+                if [[ ! -f "$diagnostic_path" || -L "$diagnostic_path" ]]; then
+                  echo "::error::Diagnostic path is not a regular non-symlink file."
+                  exit 1
+                fi
+                diagnostic_paths+=("$diagnostic_path")
+              fi
+            done
+            if ((${#diagnostic_paths[@]})); then
+              {
+                echo "exists=true"
+                echo "paths<<ROOT_DIAGNOSTIC_PATHS"
+                printf '%s\n' "${diagnostic_paths[@]}"
+                echo "ROOT_DIAGNOSTIC_PATHS"
+              } >> "$GITHUB_OUTPUT"
+            else
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload sanitized image root diagnostics
+        if: ${{ always() && steps.root_diagnostic.outputs.exists == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-root-diagnostics-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ steps.root_diagnostic.outputs.paths }}
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload validated unsigned CI evidence
         if: ${{ success() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

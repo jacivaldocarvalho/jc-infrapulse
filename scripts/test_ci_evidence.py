@@ -14,6 +14,66 @@ import sbom
 
 
 class CiEvidenceTests(unittest.TestCase):
+    def test_root_diagnostic_is_persisted_before_failure_without_raw_purl(self) -> None:
+        image_id = "sha256:" + "a" * 64
+        raw_purl = f"pkg:docker/private.registry/internal/image@{image_id}"
+        root = {
+            "type": "container",
+            "name": image_id,
+            "bom-ref": "root",
+            "purl": raw_purl,
+        }
+        error = ci_evidence.provenance.ImageRootValidationError(
+            "SBOM_ROOT_PURL_INVALID",
+            "purl",
+            "pkg:oci/<name>@sha256:<digest>",
+            "not-pkg-oci",
+            "backend-image",
+            image_id,
+            root_component=root,
+            sbom_source="ci-evidence-sbom",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "evidence"
+            output.mkdir()
+            tool = Path(temporary) / "trivy"
+            tool.write_text("synthetic")
+            with (
+                patch.object(
+                    sbom,
+                    "generate_image",
+                    return_value={
+                        "generation_status": "SUCCESS",
+                        "status": "COVERAGE_PARTIAL",
+                        "commit": "b" * 40,
+                    },
+                ),
+                patch.object(ci_evidence.provenance, "statement", side_effect=error),
+                self.assertRaises(ci_evidence.provenance.ImageRootValidationError),
+            ):
+                ci_evidence.generate_one(
+                    "backend-image",
+                    "image",
+                    None,
+                    image_id,
+                    tool,
+                    output,
+                    "b" * 40,
+                    {},
+                )
+            report_path = output / "backend-image.root-diagnostic.json"
+            report = json.loads(report_path.read_text())
+            serialized = report_path.read_text()
+            self.assertEqual(report["image"], "backend-image")
+            self.assertEqual(report["sbom_source"], "ci-evidence-sbom")
+            self.assertEqual(report["root"]["type_category"], "container")
+            self.assertTrue(report["root"]["bom_ref_conformant"])
+            self.assertEqual(report["root"]["purl"]["package_type"], "docker")
+            self.assertTrue(report["root"]["purl"]["digest_matches_expected"])
+            self.assertNotIn(raw_purl, serialized)
+            self.assertNotIn("private.registry", serialized)
+            self.assertFalse((output / "backend-image.provenance.json").exists())
+
     def test_image_root_failure_emits_compatible_structured_diagnostic(self) -> None:
         error = ci_evidence.provenance.ImageRootValidationError(
             "SBOM_ROOT_PURL_DIGEST_MISMATCH",

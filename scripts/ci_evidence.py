@@ -178,26 +178,31 @@ def generate_one(
     if source is not None and material.get("sha256") != generation.get("source_sha256"):
         raise ValueError(f"{name}: source material digest changed during generation")
     write_json(manifest_path, generation)
-    document = provenance.statement(
-        sbom_path,
-        manifest_path,
-        tool,
-        image_id,
-        image_name=name if kind == "image" else None,
-    )
-    source_inputs = [sbom_path, manifest_path, tool]
-    if source is not None:
-        source_inputs.append(source)
-    provenance.write_statement(statement_path, document, source_inputs)
-    persisted_document, persisted_bytes = _read_persisted_statement(statement_path)
-    provenance.verify(
-        persisted_document,
-        sbom_path,
-        manifest_path,
-        tool,
-        expected_image=image_id,
-        image_name=name if kind == "image" else None,
-    )
+    try:
+        document = provenance.statement(
+            sbom_path,
+            manifest_path,
+            tool,
+            image_id,
+            image_name=name if kind == "image" else None,
+        )
+        source_inputs = [sbom_path, manifest_path, tool]
+        if source is not None:
+            source_inputs.append(source)
+        provenance.write_statement(statement_path, document, source_inputs)
+        persisted_document, persisted_bytes = _read_persisted_statement(statement_path)
+        provenance.verify(
+            persisted_document,
+            sbom_path,
+            manifest_path,
+            tool,
+            expected_image=image_id,
+            image_name=name if kind == "image" else None,
+        )
+    except provenance.ImageRootValidationError as exc:
+        if kind == "image":
+            write_json(output / f"{name}.root-diagnostic.json", exc.diagnostic())
+        raise
     if sbom.digest(sbom_path) != generation.get("sha256"):
         raise ValueError(f"{name}: SBOM digest mismatch after validation")
     statement_record = file_record(output, statement_path)

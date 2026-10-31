@@ -33,6 +33,8 @@ class ImageRootValidationError(ValueError):
         image_name: str | None,
         image_id: str | None,
         message: str = "Invalid image SBOM root",
+        root_component: object = None,
+        sbom_source: str = "unknown",
     ) -> None:
         self.code = code
         self.condition = condition
@@ -49,9 +51,15 @@ class ImageRootValidationError(ValueError):
             and re.fullmatch(r"sha256:[a-f0-9]{64}", image_id)
             else "invalid-or-unavailable"
         )
+        self.root_summary = _root_summary(root_component, self.image_id)
+        self.sbom_source = (
+            sbom_source
+            if sbom_source in {"ci-evidence-sbom", "verification-regenerated-sbom"}
+            else "unknown"
+        )
         super().__init__(message)
 
-    def diagnostic(self) -> dict[str, str]:
+    def diagnostic(self) -> dict[str, object]:
         return {
             "code": self.code,
             "image": self.image_name,
@@ -59,6 +67,8 @@ class ImageRootValidationError(ValueError):
             "expected": self.expected,
             "observed": self.observed,
             "expected_local_image_id": self.image_id,
+            "sbom_source": self.sbom_source,
+            "root": self.root_summary,
         }
 
 
@@ -82,8 +92,81 @@ def _observed_type(value: object) -> str:
     return "invalid-value"
 
 
+def _root_summary(root: object, expected_image_id: str) -> dict[str, object]:
+    if not isinstance(root, dict):
+        return {
+            "type_category": "missing-or-invalid",
+            "identity_matches_expected": False,
+            "bom_ref_present": False,
+            "bom_ref_conformant": False,
+            "purl": {
+                "present": False,
+                "string": False,
+                "scheme": "unavailable",
+                "package_type": "unavailable",
+                "name_present": False,
+                "version_present": False,
+                "digest_format": "unavailable",
+                "digest_matches_expected": False,
+            },
+        }
+    bom_ref = root.get("bom-ref")
+    purl = root.get("purl")
+    purl_string = isinstance(purl, str)
+    bounded = purl_string and len(purl) <= 4096
+    scheme = (
+        "pkg"
+        if bounded and purl.startswith("pkg:")
+        else ("other" if bounded and purl else "unavailable")
+    )
+    package_type = "unavailable"
+    name_present = False
+    version = ""
+    if bounded and purl.startswith("pkg:"):
+        package_path = purl[4:].split("?", 1)[0].split("#", 1)[0]
+        if "/" in package_path:
+            raw_type, name_version = package_path.split("/", 1)
+            package_type = raw_type if raw_type in {"oci", "docker"} else "other"
+            name, separator, version = name_version.partition("@")
+            name_present = bool(name)
+            if not separator:
+                version = ""
+    version = version.split("?", 1)[0].split("#", 1)[0]
+    if not bounded:
+        digest_format = "unavailable"
+    elif not version:
+        digest_format = "missing"
+    elif re.fullmatch(r"sha256:[a-f0-9]{64}", version):
+        digest_format = "sha256-valid"
+    elif version.startswith("sha256:"):
+        digest_format = "sha256-invalid"
+    else:
+        digest_format = "other"
+    return {
+        "type_category": _observed_type(root.get("type")),
+        "identity_matches_expected": root.get("name") == expected_image_id,
+        "bom_ref_present": bool(bom_ref),
+        "bom_ref_conformant": isinstance(bom_ref, str) and bool(bom_ref),
+        "purl": {
+            "present": purl is not None and purl != "",
+            "string": purl_string,
+            "scheme": scheme,
+            "package_type": package_type,
+            "name_present": name_present,
+            "version_present": bool(version),
+            "digest_format": digest_format,
+            "digest_matches_expected": (
+                digest_format == "sha256-valid" and version == expected_image_id
+            ),
+        },
+    }
+
+
 def normalized_inventory(
-    doc: dict, image_id: str, image_name: str | None = None
+    doc: dict,
+    image_id: str,
+    image_name: str | None = None,
+    sbom_source: str = "unknown",
 ) -> tuple[Counter, Counter]:
     metadata = doc.get("metadata")
     root = metadata.get("component") if isinstance(metadata, dict) else None
@@ -95,6 +178,8 @@ def normalized_inventory(
             "missing-or-invalid",
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     observed_type = root.get("type")
     if observed_type != "container":
@@ -105,6 +190,8 @@ def normalized_inventory(
             _observed_type(observed_type),
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     if root.get("name") != image_id:
         raise ImageRootValidationError(
@@ -114,6 +201,8 @@ def normalized_inventory(
             "mismatch",
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     if not root.get("bom-ref"):
         raise ImageRootValidationError(
@@ -123,6 +212,8 @@ def normalized_inventory(
             "missing-or-empty",
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     root_purl = root.get("purl", "")
     if not isinstance(root_purl, str):
@@ -141,6 +232,8 @@ def normalized_inventory(
             purl_state,
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     purl_digest = root_purl.split("@", 1)[1].split("?", 1)[0]
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", purl_digest):
@@ -151,6 +244,8 @@ def normalized_inventory(
             "not-sha256-digest",
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     if purl_digest != image_id:
         raise ImageRootValidationError(
@@ -160,6 +255,8 @@ def normalized_inventory(
             "different-sha256-digest",
             image_name,
             image_id,
+            root_component=root,
+            sbom_source=sbom_source,
         )
     if (
         not isinstance(doc.get("components"), list)
@@ -248,7 +345,7 @@ def verify_image(
     identity = sbom.resolve_image(expected_id)
     if identity.get("image_id") != expected_id:
         raise ValueError("Expected local image unavailable")
-    original = normalized_inventory(doc, expected_id, image_name)
+    original = normalized_inventory(doc, expected_id, image_name, "ci-evidence-sbom")
     with tempfile.TemporaryDirectory(prefix="infrapulse-verify-image-") as directory:
         generated = Path(directory) / "fresh.json"
         report = sbom.generate_image(tool, expected_id, generated)
@@ -261,7 +358,10 @@ def verify_image(
         fresh = sbom.validate(generated, report["sha256"])
         if (
             report.get("components") != len(fresh.get("components", []))
-            or normalized_inventory(fresh, expected_id, image_name) != original
+            or normalized_inventory(
+                fresh, expected_id, image_name, "verification-regenerated-sbom"
+            )
+            != original
         ):
             raise ValueError("Image inventory mismatch")
     if sbom.resolve_image(expected_id).get("image_id") != expected_id:
