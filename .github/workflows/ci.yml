@@ -35,9 +35,9 @@ jobs:
           cache: pip
           cache-dependency-path: |
             backend/pyproject.toml
-            backend/requirements.lock
+            backend/requirements*.lock
       - name: Install locked backend and development dependencies
-        run: python -m pip install -c requirements.lock -e '.[dev]'
+        run: bash install-locked.sh dev --editable
       - name: Lint backend
         run: ruff check .
       - name: Check backend formatting
@@ -73,9 +73,9 @@ jobs:
           cache: pip
           cache-dependency-path: |
             backend/pyproject.toml
-            backend/requirements.lock
+            backend/requirements*.lock
       - name: Install locked backend and development dependencies
-        run: python -m pip install -c requirements.lock -e '.[dev]'
+        run: bash install-locked.sh dev --editable
       - name: Run explicitly selected tests without external services
         # Keep this allowlist in sync with the test inventory in the phase B report.
         # Direct invocation preserves all pytest exit codes, including 5 (no tests).
@@ -115,9 +115,9 @@ jobs:
           cache: pip
           cache-dependency-path: |
             backend/pyproject.toml
-            backend/requirements.lock
+            backend/requirements*.lock
       - name: Install locked backend dependencies
-        run: python -m pip install -c requirements.lock -e .
+        run: bash install-locked.sh runtime --editable
       - name: Export and validate the current OpenAPI contract
         working-directory: .
         env:
@@ -435,6 +435,52 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  security-foundations:
+    name: security-foundations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Check out repository and complete HEAD ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Set up Node matching the existing lockfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Validate npm integrity before installing the existing YAML parser
+        run: python3 scripts/check_supply_chain.py --npm-only
+      - name: Install locked dependencies without lifecycle scripts
+        working-directory: frontend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Exercise positive negative and fail-closed security regressions
+        run: |
+          python3 scripts/test_supply_chain.py
+          python3 scripts/test_locked_install.py
+      - name: Scan checkout and HEAD history with verified Gitleaks and fixtures
+        run: python3 scripts/check_secrets.py --report "${{ runner.temp }}/security-foundations/secrets.json"
+      - name: Enforce every supply chain policy
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_supply_chain.py --enforce all --report "${{ runner.temp }}/security-foundations/policy.json"
+      - name: Upload sanitized security evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-foundations
+          path: ${{ runner.temp }}/security-foundations/*.json
+          if-no-files-found: error
+          retention-days: 7
+
   ci-required:
     name: ci-required
     runs-on: ubuntu-24.04
@@ -452,6 +498,7 @@ jobs:
       - playwright-e2e
       - observability-integration
       - docker-build
+      - security-foundations
     steps:
       - name: Require every dependency to succeed
         working-directory: .

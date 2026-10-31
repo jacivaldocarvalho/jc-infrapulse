@@ -63,7 +63,7 @@ não altera a senha de um banco já inicializado no volume.
 
 ```bash
 python3 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -c backend/requirements.lock -e 'backend[dev]'
+PATH="$PWD/backend/.venv/bin:$PATH" bash backend/install-locked.sh dev --editable
 cd backend
 .venv/bin/pytest
 .venv/bin/ruff check .
@@ -97,7 +97,12 @@ acessível pelo host; o banco do Compose não é publicado. Depois, em `backend/
 - A aplicação usa factory e injeção de sessão para testes sem PostgreSQL.
   A imagem roda com usuário sem privilégios e seu health check usa `/ready`.
 - `pyproject.toml` registra as faixas de compatibilidade; `requirements.lock`
-  registra as versões resolvidas, incluindo as ferramentas de desenvolvimento.
+  registra as versões resolvidas e hashes, incluindo dependências de desenvolvimento.
+  `requirements-runtime.lock` contém o subconjunto usado pelas imagens de runtime;
+  `requirements-build.lock` fixa pip, setuptools, wheel e packaging. O instalador
+  exige hashes e wheels, depois instala apenas o pacote local sem rede ou resolução.
+  Atualizações devem revisar os hashes nos metadados oficiais do PyPI, manter os
+  subconjuntos coerentes e passar instalação limpa, `pip check`, testes e builds.
 - A Sprint 02 adiciona o registro de serviços e migrações Alembic. A Sprint 03
   adiciona monitoramento HTTP em worker independente, histórico e métricas REST.
   A Sprint 04 adiciona métricas Prometheus, traces OpenTelemetry e stack operacional.

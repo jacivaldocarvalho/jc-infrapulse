@@ -1,0 +1,4 @@
+# The engine version and archive digest are pinned in scripts/check_secrets.py.
+# No baseline, path exclusions or inline allow comments are accepted by the runner.
+[extend]
+useDefault = true
