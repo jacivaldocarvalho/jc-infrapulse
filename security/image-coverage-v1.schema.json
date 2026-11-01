@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InfraPulse image coverage contract v1",
+  "description": "Structural validation only; Python validation enforces coverage policy and independent image IDs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "targets"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "targets": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"$ref": "#/definitions/target"}
+    }
+  },
+  "definitions": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"},
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["producer", "version", "digest", "scope", "result"],
+      "properties": {
+        "producer": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9.+_-]*(?![\\s\\S])"},
+        "digest": {"$ref": "#/definitions/digest"},
+        "scope": {"type": "object", "additionalProperties": false,
+          "required": ["target", "platform", "dimension", "image_id"],
+          "properties": {
+            "target": {"enum": ["backend-image", "nginx-image"]},
+            "platform": {"const": "linux/amd64"},
+            "dimension": {"enum": ["files", "layers", "packages", "oci"]},
+            "image_id": {"$ref": "#/definitions/digest"}
+          }
+        },
+        "result": {"enum": ["POSITIVE", "INSUFFICIENT"]}
+      }
+    },
+    "dimension": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "evidence", "gaps"],
+      "properties": {
+        "state": {"enum": ["UNKNOWN", "PARTIAL", "COMPLETE"]},
+        "evidence": {"type": "array", "maxItems": 256, "items": {"$ref": "#/definitions/evidence"}},
+        "gaps": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "\\S"}}
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "platform", "image_id", "dimensions"],
+      "properties": {
+        "name": {"enum": ["backend-image", "nginx-image"]},
+        "platform": {"const": "linux/amd64"},
+        "image_id": {"$ref": "#/definitions/digest"},
+        "dimensions": {"type": "object", "additionalProperties": false,
+          "required": ["files", "layers", "packages", "oci"],
+          "properties": {
+            "files": {"$ref": "#/definitions/dimension"},
+            "layers": {"$ref": "#/definitions/dimension"},
+            "packages": {"$ref": "#/definitions/dimension"},
+            "oci": {"$ref": "#/definitions/dimension"}
+          }
+        }
+      }
+    }
+  }
+}
