@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import warnings
 import zipfile
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -55,6 +56,65 @@ def _image_record(image_id: str) -> dict[str, object]:
 
 
 class RunnerValidationTests(unittest.TestCase):
+    def test_execute_phase_failures_are_sanitized_and_nonzero(self) -> None:
+        for phase in ("checkout", "tools", "extract"):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / ".git").mkdir()
+                sensitive = "secret /private/path payload"
+                evidence = SimpleNamespace()
+                signature = SimpleNamespace(verify_cosign=lambda _: None)
+                sbom = SimpleNamespace(verify_tool=lambda _: None)
+                output, errors = io.StringIO(), io.StringIO()
+                with (
+                    patch.object(
+                        validation,
+                        "_work_dir",
+                        side_effect=OSError(sensitive) if phase == "checkout" else None,
+                        return_value=root,
+                    ),
+                    patch.object(
+                        validation,
+                        "_safe_subprocess",
+                        return_value=validation.EVIDENCE_COMMIT.encode(),
+                    ),
+                    patch.object(
+                        validation,
+                        "_load_modules",
+                        side_effect=ValueError(sensitive) if phase == "tools" else None,
+                        return_value=(evidence, signature, None, sbom),
+                    ),
+                    patch.object(
+                        validation, "extract_artifacts", side_effect=KeyError(sensitive)
+                    ),
+                    patch.dict(
+                        os.environ,
+                        {
+                            "GITHUB_ACTIONS": "true",
+                            "TRIVY_BINARY": "trivy",
+                            "COSIGN_BINARY": "cosign",
+                        },
+                    ),
+                    patch(
+                        "sys.argv",
+                        [
+                            "validation",
+                            "execute",
+                            "--work-dir",
+                            str(root),
+                            "--project-root",
+                            str(root),
+                        ],
+                    ),
+                    redirect_stdout(output),
+                    redirect_stderr(errors),
+                ):
+                    self.assertEqual(validation.main(), 1)
+                log = output.getvalue() + errors.getvalue()
+                self.assertIn(f"PHASE {phase} START", log)
+                self.assertIn(f"PHASE {phase} FAIL", log)
+                self.assertNotIn(sensitive, log)
+
     def test_workflow_overlays_validators_before_installing_cosign(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1]
