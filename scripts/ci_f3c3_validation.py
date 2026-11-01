@@ -17,6 +17,8 @@ import urllib.parse
 import urllib.request
 import zipfile
 import zlib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -90,6 +92,20 @@ ARTIFACTS = (
 
 class ValidationError(RuntimeError):
     """A fail-closed validation error safe to show in workflow logs."""
+
+
+@contextmanager
+def _phase(name: str) -> Iterator[None]:
+    print(f"PHASE {name} START", flush=True)
+    try:
+        yield
+    except Exception as exc:  # noqa: BLE001 - prevent sensitive exception text in logs
+        allowed = (ValidationError, OSError, ValueError, KeyError, TypeError)
+        kind = type(exc).__name__ if type(exc) in allowed else "OtherError"
+        print(f"PHASE {name} FAIL {kind}", file=sys.stderr, flush=True)
+        raise ValidationError("Integrated validation phase failed") from None
+    else:
+        print(f"PHASE {name} PASS", flush=True)
 
 
 def _pairs_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -939,220 +955,232 @@ def _negative_crypto_checks(
 
 
 def execute(work_dir: Path, project_root: Path, trivy: Path, cosign: Path) -> None:
-    work_dir = _work_dir(work_dir, must_exist=True)
-    project_root = project_root.resolve(strict=True)
-    if not (project_root / ".git").exists():
-        raise ValidationError("F3C.2 source checkout is unavailable")
-    head = (
-        _safe_subprocess(["git", "-C", str(project_root), "rev-parse", "HEAD"])
-        .decode()
-        .strip()
-    )
-    if head != EVIDENCE_COMMIT:
-        raise ValidationError("F3C.2 validation checkout commit mismatch")
-    if os.environ.get("GITHUB_ACTIONS") != "true":
-        raise ValidationError(
-            "Integrated validation is restricted to GitHub-hosted Actions"
+    with _phase("checkout"):
+        work_dir = _work_dir(work_dir, must_exist=True)
+        project_root = project_root.resolve(strict=True)
+        if not (project_root / ".git").exists():
+            raise ValidationError("F3C.2 source checkout is unavailable")
+        head = (
+            _safe_subprocess(["git", "-C", str(project_root), "rev-parse", "HEAD"])
+            .decode()
+            .strip()
         )
+        if head != EVIDENCE_COMMIT:
+            raise ValidationError("F3C.2 validation checkout commit mismatch")
+        if os.environ.get("GITHUB_ACTIONS") != "true":
+            raise ValidationError(
+                "Integrated validation is restricted to GitHub-hosted Actions"
+            )
 
-    evidence, signature, _, sbom = _load_modules(project_root)
-    signature.verify_cosign(cosign)
-    sbom.verify_tool(trivy)
-    dirs = extract_artifacts(work_dir)
-    evidence_dir = dirs["evidence"]
-    handoff_dir = dirs["handoff"]
-    validation_dir = dirs["validation"]
+    with _phase("tools"):
+        evidence, signature, _, sbom = _load_modules(project_root)
+        signature.verify_cosign(cosign)
+        sbom.verify_tool(trivy)
+    with _phase("extract"):
+        dirs = extract_artifacts(work_dir)
+        evidence_dir = dirs["evidence"]
+        handoff_dir = dirs["handoff"]
+        validation_dir = dirs["validation"]
 
-    image_report = _read_json_file(validation_dir / "report.json", MAX_REPORT_TOTAL)
-    handoff_fd = os.open(
-        handoff_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
-    )
-    try:
-        handoff = evidence._read_handoff_manifest(handoff_fd)[0]
-    finally:
-        os.close(handoff_fd)
-    image_ids = _validate_image_report(validation_dir / "report.json", handoff)
-
-    data, manifest = evidence._load_and_validate(
-        evidence_dir,
-        EVIDENCE_COMMIT,
-        RUN_ID,
-        RUN_ATTEMPT,
-        REPOSITORY,
-        image_ids,
-    )
-    canonical_dir = work_dir / "canonical"
-    canonical_dir.mkdir(mode=0o700)
-    prior_run_id = os.environ.get("GITHUB_RUN_ID")
-    prior_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
-    os.environ["GITHUB_RUN_ID"] = RUN_ID
-    os.environ["GITHUB_RUN_ATTEMPT"] = str(RUN_ATTEMPT)
-    try:
-        receipt = evidence._validate_handoff_archives(
-            handoff_dir,
-            manifest,
-            EVIDENCE_COMMIT,
-            RUN_ID,
-            RUN_ATTEMPT,
-            image_ids,
-            evidence_manifest_bytes=data["evidence-manifest.json"],
-            canonical_output_dir=canonical_dir,
+    with _phase("manifests"):
+        image_report = _read_json_file(validation_dir / "report.json", MAX_REPORT_TOTAL)
+        handoff_fd = os.open(
+            handoff_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
         )
-    finally:
-        if prior_run_id is None:
-            os.environ.pop("GITHUB_RUN_ID", None)
-        else:
-            os.environ["GITHUB_RUN_ID"] = prior_run_id
-        if prior_run_attempt is None:
-            os.environ.pop("GITHUB_RUN_ATTEMPT", None)
-        else:
-            os.environ["GITHUB_RUN_ATTEMPT"] = prior_run_attempt
-    if not isinstance(receipt, bytes) or not receipt:
-        raise ValidationError("Canonical archive receipt was not produced")
+        try:
+            handoff = evidence._read_handoff_manifest(handoff_fd)[0]
+        finally:
+            os.close(handoff_fd)
+        image_ids = _validate_image_report(validation_dir / "report.json", handoff)
 
-    image_sizes = {
-        "backend-image": image_report["api"]["bytes"],
-        "nginx-image": image_report["frontend"]["bytes"],
-    }
-    runner_temp = _runner_temp()
-    docker_root = _docker_root()
-    require_free_space(
-        docker_root,
-        2 * sum(image_sizes.values()) + LOAD_HEADROOM,
-        "Docker image import",
-    )
-    for name, image_id in sorted(image_ids.items()):
-        canonical = canonical_dir / f"{name}.canonical.tar"
-        if canonical.is_symlink() or not canonical.is_file():
-            raise ValidationError("Canonical archive output is missing")
-        _docker_load_and_inspect(
-            canonical,
-            image_id,
-            image_sizes[name],
-            docker_root,
-            runner_temp,
-        )
-
-    crypto_dir = work_dir / "crypto"
-    crypto_dir.mkdir(mode=0o700)
-    private_key, _, policy, policy_sha, key_id = _generate_test_key(cosign, crypto_dir)
-    signatures_dir = work_dir / "signatures"
-    prior_run_id = os.environ.get("GITHUB_RUN_ID")
-    prior_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
-    os.environ["GITHUB_RUN_ID"] = RUN_ID
-    os.environ["GITHUB_RUN_ATTEMPT"] = str(RUN_ATTEMPT)
-    try:
-        result = evidence.sign_evidence(
+        data, manifest = evidence._load_and_validate(
             evidence_dir,
-            handoff_dir,
-            signatures_dir,
-            private_key,
-            cosign,
-            trivy,
-            policy,
-            policy_sha,
-            key_id,
             EVIDENCE_COMMIT,
             RUN_ID,
             RUN_ATTEMPT,
             REPOSITORY,
             image_ids,
-            canonicalize_oci=True,
         )
+    with _phase("canonicalize"):
+        canonical_dir = work_dir / "canonical"
+        canonical_dir.mkdir(mode=0o700)
+        prior_run_id = os.environ.get("GITHUB_RUN_ID")
+        prior_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+        os.environ["GITHUB_RUN_ID"] = RUN_ID
+        os.environ["GITHUB_RUN_ATTEMPT"] = str(RUN_ATTEMPT)
+        try:
+            receipt = evidence._validate_handoff_archives(
+                handoff_dir,
+                manifest,
+                EVIDENCE_COMMIT,
+                RUN_ID,
+                RUN_ATTEMPT,
+                image_ids,
+                evidence_manifest_bytes=data["evidence-manifest.json"],
+                canonical_output_dir=canonical_dir,
+            )
+        finally:
+            if prior_run_id is None:
+                os.environ.pop("GITHUB_RUN_ID", None)
+            else:
+                os.environ["GITHUB_RUN_ID"] = prior_run_id
+            if prior_run_attempt is None:
+                os.environ.pop("GITHUB_RUN_ATTEMPT", None)
+            else:
+                os.environ["GITHUB_RUN_ATTEMPT"] = prior_run_attempt
+        if not isinstance(receipt, bytes) or not receipt:
+            raise ValidationError("Canonical archive receipt was not produced")
+
+    with _phase("docker_import"):
+        image_sizes = {
+            "backend-image": image_report["api"]["bytes"],
+            "nginx-image": image_report["frontend"]["bytes"],
+        }
+        runner_temp = _runner_temp()
+        docker_root = _docker_root()
+        require_free_space(
+            docker_root,
+            2 * sum(image_sizes.values()) + LOAD_HEADROOM,
+            "Docker image import",
+        )
+        for name, image_id in sorted(image_ids.items()):
+            canonical = canonical_dir / f"{name}.canonical.tar"
+            if canonical.is_symlink() or not canonical.is_file():
+                raise ValidationError("Canonical archive output is missing")
+            _docker_load_and_inspect(
+                canonical,
+                image_id,
+                image_sizes[name],
+                docker_root,
+                runner_temp,
+            )
+
+    with _phase("sign_verify"):
+        crypto_dir = work_dir / "crypto"
+        crypto_dir.mkdir(mode=0o700)
+        private_key, _, policy, policy_sha, key_id = _generate_test_key(
+            cosign, crypto_dir
+        )
+        signatures_dir = work_dir / "signatures"
+        prior_run_id = os.environ.get("GITHUB_RUN_ID")
+        prior_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+        os.environ["GITHUB_RUN_ID"] = RUN_ID
+        os.environ["GITHUB_RUN_ATTEMPT"] = str(RUN_ATTEMPT)
+        try:
+            result = evidence.sign_evidence(
+                evidence_dir,
+                handoff_dir,
+                signatures_dir,
+                private_key,
+                cosign,
+                trivy,
+                policy,
+                policy_sha,
+                key_id,
+                EVIDENCE_COMMIT,
+                RUN_ID,
+                RUN_ATTEMPT,
+                REPOSITORY,
+                image_ids,
+                canonicalize_oci=True,
+            )
+            if (
+                result.get("integrity") != "INTEGRITY_VERIFIED"
+                or result.get("signature") != "SIGNATURE_VALID"
+                or result.get("signer") != "TRUSTED_SIGNER"
+            ):
+                raise ValidationError(
+                    "Signing round-trip did not return all required states"
+                )
+            verified = evidence.verify_evidence(
+                evidence_dir,
+                handoff_dir,
+                signatures_dir,
+                cosign,
+                trivy,
+                policy,
+                policy_sha,
+                key_id,
+                EVIDENCE_COMMIT,
+                RUN_ID,
+                RUN_ATTEMPT,
+                REPOSITORY,
+                image_ids,
+                canonicalize_oci=True,
+            )
+        finally:
+            if prior_run_id is None:
+                os.environ.pop("GITHUB_RUN_ID", None)
+            else:
+                os.environ["GITHUB_RUN_ID"] = prior_run_id
+            if prior_run_attempt is None:
+                os.environ.pop("GITHUB_RUN_ATTEMPT", None)
+            else:
+                os.environ["GITHUB_RUN_ATTEMPT"] = prior_run_attempt
         if (
-            result.get("integrity") != "INTEGRITY_VERIFIED"
-            or result.get("signature") != "SIGNATURE_VALID"
-            or result.get("signer") != "TRUSTED_SIGNER"
+            verified.get("integrity") != "INTEGRITY_VERIFIED"
+            or verified.get("signature") != "SIGNATURE_VALID"
+            or verified.get("signer") != "TRUSTED_SIGNER"
         ):
             raise ValidationError(
-                "Signing round-trip did not return all required states"
+                "Offline verification did not return all required states"
             )
-        verified = evidence.verify_evidence(
-            evidence_dir,
-            handoff_dir,
-            signatures_dir,
+
+    with _phase("negative_checks"):
+        bundles = evidence._read_exact_directory(
+            signatures_dir, evidence._bundle_names(canonicalize_oci=True)
+        )
+        manifest_bytes = data["evidence-manifest.json"]
+        _negative_crypto_checks(
+            signature,
             cosign,
-            trivy,
             policy,
             policy_sha,
             key_id,
-            EVIDENCE_COMMIT,
-            RUN_ID,
-            RUN_ATTEMPT,
-            REPOSITORY,
-            image_ids,
-            canonicalize_oci=True,
+            manifest_bytes,
+            bundles["evidence-manifest.sigstore.json"],
+            crypto_dir,
         )
-    finally:
-        if prior_run_id is None:
-            os.environ.pop("GITHUB_RUN_ID", None)
+        tampered_evidence = work_dir / "tampered-evidence"
+        shutil.copytree(evidence_dir, tampered_evidence, symlinks=False)
+        sbom_path = tampered_evidence / "python.cdx.json"
+        with sbom_path.open("r+b") as stream:
+            first = stream.read(1)
+            if not first:
+                raise ValidationError("Python SBOM fixture is empty")
+            stream.seek(0)
+            stream.write(bytes([first[0] ^ 1]))
+        try:
+            evidence.verify_evidence(
+                tampered_evidence,
+                handoff_dir,
+                signatures_dir,
+                cosign,
+                trivy,
+                policy,
+                policy_sha,
+                key_id,
+                EVIDENCE_COMMIT,
+                RUN_ID,
+                RUN_ATTEMPT,
+                REPOSITORY,
+                image_ids,
+                canonicalize_oci=True,
+            )
+        except (ValueError, RuntimeError):
+            pass
         else:
-            os.environ["GITHUB_RUN_ID"] = prior_run_id
-        if prior_run_attempt is None:
-            os.environ.pop("GITHUB_RUN_ATTEMPT", None)
-        else:
-            os.environ["GITHUB_RUN_ATTEMPT"] = prior_run_attempt
-    if (
-        verified.get("integrity") != "INTEGRITY_VERIFIED"
-        or verified.get("signature") != "SIGNATURE_VALID"
-        or verified.get("signer") != "TRUSTED_SIGNER"
-    ):
-        raise ValidationError("Offline verification did not return all required states")
+            raise ValidationError("Tampered SBOM package was unexpectedly accepted")
 
-    bundles = evidence._read_exact_directory(
-        signatures_dir, evidence._bundle_names(canonicalize_oci=True)
-    )
-    manifest_bytes = data["evidence-manifest.json"]
-    _negative_crypto_checks(
-        signature,
-        cosign,
-        policy,
-        policy_sha,
-        key_id,
-        manifest_bytes,
-        bundles["evidence-manifest.sigstore.json"],
-        crypto_dir,
-    )
-    tampered_evidence = work_dir / "tampered-evidence"
-    shutil.copytree(evidence_dir, tampered_evidence, symlinks=False)
-    sbom_path = tampered_evidence / "python.cdx.json"
-    with sbom_path.open("r+b") as stream:
-        first = stream.read(1)
-        if not first:
-            raise ValidationError("Python SBOM fixture is empty")
-        stream.seek(0)
-        stream.write(bytes([first[0] ^ 1]))
-    try:
-        evidence.verify_evidence(
-            tampered_evidence,
-            handoff_dir,
-            signatures_dir,
-            cosign,
-            trivy,
-            policy,
-            policy_sha,
-            key_id,
-            EVIDENCE_COMMIT,
-            RUN_ID,
-            RUN_ATTEMPT,
-            REPOSITORY,
-            image_ids,
-            canonicalize_oci=True,
+        print(
+            "F3B.1 and Cosign round-trip PASS: "
+            "INTEGRITY_VERIFIED, SIGNATURE_VALID, TRUSTED_SIGNER; "
+            "coverage=image COVERAGE_PARTIAL; builder authenticity/SLSA not asserted"
         )
-    except (ValueError, RuntimeError):
-        pass
-    else:
-        raise ValidationError("Tampered SBOM package was unexpectedly accepted")
-
-    print(
-        "F3B.1 and Cosign round-trip PASS: "
-        "INTEGRITY_VERIFIED, SIGNATURE_VALID, TRUSTED_SIGNER; "
-        "coverage=image COVERAGE_PARTIAL; builder authenticity/SLSA not asserted"
-    )
-    print(
-        "Negative checks PASS: payload tampering, bundle tampering, "
-        "unauthorized key, fingerprint mismatch, SBOM tampering"
-    )
+        print(
+            "Negative checks PASS: payload tampering, bundle tampering, "
+            "unauthorized key, fingerprint mismatch, SBOM tampering"
+        )
 
 
 def install_cosign(project_root: Path, output: Path) -> None:
