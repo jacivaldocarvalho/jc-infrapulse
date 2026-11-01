@@ -720,15 +720,23 @@ def _safe_subprocess(
 
 def _load_modules(project_root: Path) -> tuple[Any, Any, Any, Any]:
     sys.path.insert(0, str(project_root / "scripts"))
-    try:
-        evidence = importlib.import_module("ci_evidence_signature")
-        provenance_signature = importlib.import_module("provenance_signature")
-        canonicalizer = importlib.import_module("oci_canonicalizer")
-        sbom = importlib.import_module("sbom")
-    except ImportError:
-        raise ValidationError(
-            "F3B.1/F3C.3.1 validation modules are unavailable"
-        ) from None
+    loaded = []
+    for name in (
+        "ci_evidence_signature",
+        "provenance_signature",
+        "oci_canonicalizer",
+        "sbom",
+    ):
+        try:
+            loaded.append(importlib.import_module(name))
+        except ModuleNotFoundError as exc:
+            reason = "module missing" if exc.name == name else "dependency missing"
+            raise ValidationError(f"Unable to load {name}: {reason}") from None
+        except ImportError:
+            raise ValidationError(
+                f"Unable to load {name}: internal import error"
+            ) from None
+    evidence, provenance_signature, canonicalizer, sbom = loaded
     return evidence, provenance_signature, canonicalizer, sbom
 
 

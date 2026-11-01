@@ -86,16 +86,6 @@ jobs:
             -r "$SOURCE_DIR/security/sbom-tools.lock"
           "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" -m pip check
 
-      - name: Install pinned Trivy and Cosign with checked-in SHA-256 pins
-        timeout-minutes: 8
-        run: |
-          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
-            "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-trivy \
-            --project-root "$SOURCE_DIR" --output-dir "$TOOL_DIR"
-          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
-            "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-cosign \
-            --project-root "$SOURCE_DIR" --output "$TOOL_DIR/cosign"
-
       - name: Verify pinned checkouts and overlay only approved validator modules
         run: |
           test "$(git -C "$CONTROLLER_DIR" rev-parse HEAD)" = "$GITHUB_SHA"
@@ -107,6 +97,16 @@ jobs:
           install -m 0644 "$VALIDATOR_DIR/scripts/ci_evidence_signature.py" "$SOURCE_DIR/scripts/ci_evidence_signature.py"
           install -m 0644 "$VALIDATOR_DIR/scripts/provenance_signature.py" "$SOURCE_DIR/scripts/provenance_signature.py"
           install -m 0644 "$VALIDATOR_DIR/scripts/oci_canonicalizer.py" "$SOURCE_DIR/scripts/oci_canonicalizer.py"
+
+      - name: Install pinned Trivy and Cosign with checked-in SHA-256 pins
+        timeout-minutes: 8
+        run: |
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
+            "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-trivy \
+            --project-root "$SOURCE_DIR" --output-dir "$TOOL_DIR"
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
+            "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-cosign \
+            --project-root "$SOURCE_DIR" --output "$TOOL_DIR/cosign"
 
       - name: Validate archives, run F3B.1, and perform disposable-key Cosign round-trip
         timeout-minutes: 25

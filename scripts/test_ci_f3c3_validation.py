@@ -55,6 +55,40 @@ def _image_record(image_id: str) -> dict[str, object]:
 
 
 class RunnerValidationTests(unittest.TestCase):
+    def test_workflow_overlays_validators_before_installing_cosign(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/f3c3-real-validation.yml"
+        ).read_text()
+        self.assertLess(
+            workflow.index("- name: Verify pinned checkouts and overlay"),
+            workflow.index("- name: Install pinned Trivy and Cosign"),
+        )
+
+    def test_module_import_errors_are_distinguished_without_exception_text(
+        self,
+    ) -> None:
+        cases = (
+            (
+                ModuleNotFoundError("private path", name="ci_evidence_signature"),
+                "module missing",
+            ),
+            (
+                ModuleNotFoundError("private path", name="dependency"),
+                "dependency missing",
+            ),
+            (ImportError("private path"), "internal import error"),
+        )
+        for error, expected in cases:
+            with (
+                self.subTest(expected=expected),
+                patch.object(validation.importlib, "import_module", side_effect=error),
+            ):
+                with self.assertRaises(validation.ValidationError) as caught:
+                    validation._load_modules(Path("."))
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn("private path", str(caught.exception))
+
     def test_cosign_download_requires_exact_size_and_hash(self) -> None:
         expected = b"abcd"
         lock = {
