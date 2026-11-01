@@ -103,7 +103,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
             "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-trivy \
-            --project-root "$SOURCE_DIR" --output-dir "$TOOL_DIR"
+            --project-root "$SOURCE_DIR" --output-dir "$RUNNER_TEMP/sbom-tools/bin"
           "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
             "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-cosign \
             --project-root "$SOURCE_DIR" --output "$TOOL_DIR/cosign"
@@ -111,7 +111,7 @@ jobs:
       - name: Validate archives, run F3B.1, and perform disposable-key Cosign round-trip
         timeout-minutes: 25
         env:
-          TRIVY_BINARY: ${{ runner.temp }}/infrapulse-f3c3-tools/bin/trivy
+          TRIVY_BINARY: ${{ runner.temp }}/sbom-tools/bin/trivy
           COSIGN_BINARY: ${{ runner.temp }}/infrapulse-f3c3-tools/bin/cosign
         run: >-
           "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python"

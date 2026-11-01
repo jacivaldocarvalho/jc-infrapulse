@@ -39,6 +39,7 @@ MAX_HANDOFF_TOTAL = 4 * GIB
 MAX_REPORT_TOTAL = 2 * 1024 * 1024
 MAX_IMAGE_BYTES = 2 * GIB
 COSIGN_V313_LINUX_AMD64_BYTES = 141_178_250
+TRIVY_EVIDENCE_URI = "file:///home/runner/work/_temp/sbom-tools/bin/trivy"
 MIN_DOWNLOAD_HEADROOM = 2 * GIB
 LOAD_HEADROOM = 1024**3
 OWNER_MARKER = ".infrapulse-f3c3-owner.json"
@@ -290,6 +291,56 @@ def _runner_temp() -> Path:
     if not path.is_dir():
         raise ValidationError("GitHub runner temporary path is invalid")
     return path
+
+
+def _trivy_destination(path: Path, *, create: bool) -> Path:
+    if os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted":
+        raise ValidationError("Trivy destination requires a GitHub-hosted runner")
+    raw_temp = Path(os.environ.get("RUNNER_TEMP", ""))
+    temp = _runner_temp()
+    target = temp / "sbom-tools" / "bin"
+    if (
+        not raw_temp.is_absolute()
+        or raw_temp != temp
+        or path != target
+        or (target / "trivy").as_uri() != TRIVY_EVIDENCE_URI
+    ):
+        raise ValidationError("Trivy destination or evidence URI is invalid")
+    if create:
+        root_fd = os.open(
+            temp, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        )
+        try:
+            os.mkdir("sbom-tools", mode=0o700, dir_fd=root_fd)
+            parent_fd = os.open(
+                "sbom-tools",
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=root_fd,
+            )
+            try:
+                os.mkdir("bin", mode=0o700, dir_fd=parent_fd)
+            finally:
+                os.close(parent_fd)
+        finally:
+            os.close(root_fd)
+    for directory in (target.parent, target):
+        info = directory.lstat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.getuid()
+            or info.st_mode & 0o077
+        ):
+            raise ValidationError("Trivy directory is not private and owned")
+    return target
+
+
+def _validate_trivy_binary(trivy: Path) -> None:
+    expected = _trivy_destination(trivy.parent, create=False) / "trivy"
+    if trivy != expected:
+        raise ValidationError("Trivy binary path is not authorized")
+    info = trivy.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+        raise ValidationError("Trivy binary is not an owned regular file")
 
 
 def _work_dir(path: Path, *, must_exist: bool) -> Path:
@@ -1028,6 +1079,7 @@ def execute(work_dir: Path, project_root: Path, trivy: Path, cosign: Path) -> No
             )
 
     with _phase("tools"):
+        _validate_trivy_binary(trivy)
         evidence, signature, _, sbom = _load_modules(project_root)
         signature.verify_cosign(cosign)
         sbom.verify_tool(trivy)
@@ -1349,12 +1401,13 @@ def main() -> int:
         elif args.command == "install-cosign":
             install_cosign(args.project_root, args.output)
         elif args.command == "install-trivy":
+            destination = _trivy_destination(args.output_dir, create=True)
             result = _safe_subprocess(
                 [
                     sys.executable,
                     str(args.project_root / "scripts/vulnerability_ci.py"),
                     "--install-trivy",
-                    str(args.output_dir),
+                    str(destination),
                 ],
                 cwd=args.project_root,
                 timeout=300,

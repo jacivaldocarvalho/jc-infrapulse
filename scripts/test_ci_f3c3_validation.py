@@ -56,6 +56,68 @@ def _image_record(image_id: str) -> dict[str, object]:
 
 
 class RunnerValidationTests(unittest.TestCase):
+    def test_trivy_evidence_uri_requires_exact_private_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / "sbom-tools" / "bin"
+            expected_uri = (destination / "trivy").as_uri()
+            with (
+                patch.dict(
+                    os.environ,
+                    {"RUNNER_TEMP": str(root), "RUNNER_ENVIRONMENT": "github-hosted"},
+                ),
+                patch.object(validation, "TRIVY_EVIDENCE_URI", expected_uri),
+            ):
+                self.assertEqual(
+                    validation._trivy_destination(destination, create=True), destination
+                )
+                self.assertEqual(
+                    validation._trivy_destination(destination, create=False),
+                    destination,
+                )
+                binary = destination / "trivy"
+                binary.symlink_to(root / "elsewhere")
+                with self.assertRaises(validation.ValidationError):
+                    validation._validate_trivy_binary(binary)
+                binary.unlink()
+                binary.touch()
+                validation._validate_trivy_binary(binary)
+                with self.assertRaises(FileExistsError):
+                    validation._trivy_destination(destination, create=True)
+                with self.assertRaises(validation.ValidationError):
+                    validation._trivy_destination(root / "other" / "bin", create=True)
+                with (
+                    patch.object(
+                        validation, "TRIVY_EVIDENCE_URI", "file:///different/trivy"
+                    ),
+                    self.assertRaises(validation.ValidationError),
+                ):
+                    validation._trivy_destination(destination, create=False)
+
+    def test_trivy_destination_rejects_symlinks_and_non_hosted_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "sbom-tools" / "bin"
+            (root / "sbom-tools").symlink_to(root, target_is_directory=True)
+            with (
+                patch.dict(
+                    os.environ,
+                    {"RUNNER_TEMP": str(root), "RUNNER_ENVIRONMENT": "github-hosted"},
+                ),
+                patch.object(
+                    validation, "TRIVY_EVIDENCE_URI", (target / "trivy").as_uri()
+                ),
+            ):
+                with self.assertRaises(FileExistsError):
+                    validation._trivy_destination(target, create=True)
+                with self.assertRaises(validation.ValidationError):
+                    validation._trivy_destination(target, create=False)
+                with (
+                    patch.dict(os.environ, {"RUNNER_ENVIRONMENT": "self-hosted"}),
+                    self.assertRaises(validation.ValidationError),
+                ):
+                    validation._trivy_destination(target, create=True)
+
     def test_sign_subphases_sanitize_errors_and_restore_functions(self) -> None:
         for failing in ("_load_and_validate", "_trusted_key", "sign_blob_bytes"):
             with self.subTest(failing=failing):
@@ -147,6 +209,7 @@ class RunnerValidationTests(unittest.TestCase):
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root / ".git").mkdir()
+                (root / "trivy").touch()
                 sensitive = "secret /private/path payload"
                 evidence = SimpleNamespace()
                 signature = SimpleNamespace(verify_cosign=lambda _: None)
@@ -164,6 +227,7 @@ class RunnerValidationTests(unittest.TestCase):
                         "_safe_subprocess",
                         return_value=validation.EVIDENCE_COMMIT.encode(),
                     ),
+                    patch.object(validation, "_trivy_destination", return_value=root),
                     patch.object(
                         validation,
                         "_load_modules",
@@ -177,7 +241,7 @@ class RunnerValidationTests(unittest.TestCase):
                         os.environ,
                         {
                             "GITHUB_ACTIONS": "true",
-                            "TRIVY_BINARY": "trivy",
+                            "TRIVY_BINARY": str(root / "trivy"),
                             "COSIGN_BINARY": "cosign",
                         },
                     ),
