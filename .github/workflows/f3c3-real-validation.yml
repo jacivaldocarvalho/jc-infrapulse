@@ -21,13 +21,16 @@ jobs:
       contents: read
       actions: read
     env:
-      WORK_DIR: ${{ runner.temp }}/infrapulse-f3c3-runner-41238810850
       SOURCE_DIR: ${{ github.workspace }}
       CONTROLLER_DIR: ${{ github.workspace }}/controller
       VALIDATOR_DIR: ${{ github.workspace }}/f3c3-validator
-      TOOL_DIR: ${{ runner.temp }}/infrapulse-f3c3-tools/bin
       COSIGN_PASSWORD: ''
     steps:
+      - name: Initialize runner paths
+        run: |
+          echo "WORK_DIR=$RUNNER_TEMP/infrapulse-f3c3-runner-41238810850" >> "$GITHUB_ENV"
+          echo "TOOL_DIR=$RUNNER_TEMP/infrapulse-f3c3-tools/bin" >> "$GITHUB_ENV"
+
       - name: Check out the exact F3C.2 evidence source commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
