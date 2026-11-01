@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import stat
@@ -53,6 +55,61 @@ def _image_record(image_id: str) -> dict[str, object]:
 
 
 class RunnerValidationTests(unittest.TestCase):
+    def test_cosign_download_requires_exact_size_and_hash(self) -> None:
+        expected = b"abcd"
+        lock = {
+            "schema_version": 1,
+            "name": "cosign",
+            "platform": "linux-amd64",
+            "version": "3.1.3",
+            "release_url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64",
+            "sha256": hashlib.sha256(expected).hexdigest(),
+        }
+        cases = (
+            (expected, None),
+            (b"abc", "size mismatch"),
+            (b"abcde", "size limit"),
+            (b"wxyz", "SHA-256 mismatch"),
+        )
+        for payload, error in cases:
+            with (
+                self.subTest(payload=payload),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = Path(temporary)
+                output = root / "cosign"
+                verifier = unittest.mock.Mock()
+                with (
+                    patch.object(
+                        validation, "COSIGN_V313_LINUX_AMD64_BYTES", len(expected)
+                    ),
+                    patch.object(validation, "_read_json_file", return_value=lock),
+                    patch.object(
+                        validation.urllib.request,
+                        "urlopen",
+                        return_value=io.BytesIO(payload),
+                    ),
+                    patch.object(
+                        validation,
+                        "_load_modules",
+                        return_value=(
+                            None,
+                            SimpleNamespace(verify_cosign=verifier),
+                            None,
+                            None,
+                        ),
+                    ),
+                ):
+                    if error:
+                        with self.assertRaisesRegex(validation.ValidationError, error):
+                            validation.install_cosign(root, output)
+                        self.assertFalse(output.exists())
+                        verifier.assert_not_called()
+                    else:
+                        validation.install_cosign(root, output)
+                        self.assertEqual(output.read_bytes(), expected)
+                        verifier.assert_called_once_with(output)
+
     def test_unauthorized_signer_must_be_valid_then_rejected_by_original_policy(
         self,
     ) -> None:
