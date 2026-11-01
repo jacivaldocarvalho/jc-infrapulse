@@ -189,6 +189,45 @@ class WorkflowPolicyTests(unittest.TestCase):
         doc["jobs"]["check"]["permissions"] = {"packages": "write"}
         self.assertTrue(policy.workflow_violations(doc))
 
+    def test_actions_read_exception_is_scoped_and_read_only(self) -> None:
+        path = ".github/workflows/f3c3-real-validation.yml"
+        doc = self.workflow()
+        doc["on"] = {"workflow_dispatch": None}
+        doc["permissions"] = {"contents": "read", "actions": "read"}
+        job = doc["jobs"].pop("check")
+        job["if"] = "github.ref == 'refs/heads/main'"
+        job["permissions"] = {"contents": "read", "actions": "read"}
+        doc["jobs"]["integrated-validation"] = job
+        self.assertEqual(policy.workflow_violations(doc, path), [])
+        for other in (None, ".github/workflows/other.yml", "./" + path, path.upper()):
+            with self.subTest(path=other):
+                self.assertTrue(policy.workflow_violations(doc, other))
+        for level, permissions in (
+            ("workflow", {"contents": "read", "actions": "write"}),
+            ("workflow", {"contents": "read", "actions": "read", "id-token": "write"}),
+            ("workflow", {"actions": "read"}),
+            ("job", {"contents": "read", "actions": "write"}),
+            ("job", {"contents": "read", "actions": "read", "id-token": "write"}),
+            ("job", {"contents": "read", "packages": "read"}),
+        ):
+            changed = copy.deepcopy(doc)
+            if level == "workflow":
+                changed["permissions"] = permissions
+            else:
+                changed["jobs"]["integrated-validation"]["permissions"] = permissions
+            with self.subTest(level=level, permissions=permissions):
+                self.assertTrue(policy.workflow_violations(changed, path))
+        for change in ("trigger", "condition", "extra_job"):
+            changed = copy.deepcopy(doc)
+            if change == "trigger":
+                changed["on"]["push"] = None
+            elif change == "condition":
+                changed["jobs"]["integrated-validation"]["if"] = "true"
+            else:
+                changed["jobs"]["other"] = copy.deepcopy(job)
+            with self.subTest(change=change):
+                self.assertTrue(policy.workflow_violations(changed, path))
+
     def test_action_tags_partial_sha_credentials_timeout_fail(self) -> None:
         for ref in ("actions/checkout@v4", "actions/checkout@abcdef", "./local"):
             doc = self.workflow()
