@@ -170,22 +170,37 @@ def image_violations(text: str) -> list[str]:
     return errors
 
 
-def workflow_violations(doc: dict) -> list[str]:
+def workflow_violations(doc: dict, workflow_path: str | None = None) -> list[str]:
     errors: list[str] = []
-    if doc.get("permissions") != {"contents": "read"}:
-        errors.append("Workflow permissions must be contents: read only")
     events = doc.get("on", {})
+    jobs = doc.get("jobs", {})
+    # This fixed workflow reads artifacts only in its main-only manual job.
+    artifact_reader = (
+        workflow_path == ".github/workflows/f3c3-real-validation.yml"
+        and isinstance(events, dict)
+        and set(events) == {"workflow_dispatch"}
+        and isinstance(jobs, dict)
+        and set(jobs) == {"integrated-validation"}
+        and isinstance(jobs["integrated-validation"], dict)
+        and jobs["integrated-validation"].get("if") == "github.ref == 'refs/heads/main'"
+    )
+    allowed_workflow_permissions = [{"contents": "read"}]
+    if artifact_reader:
+        allowed_workflow_permissions.append({"contents": "read", "actions": "read"})
+    if doc.get("permissions") not in allowed_workflow_permissions:
+        errors.append("Workflow permissions must be contents: read only")
     if isinstance(events, str):
         events = [events]
     if not isinstance(events, (dict, list)) or "pull_request_target" in events:
         errors.append("Unsafe workflow trigger")
-    jobs = doc.get("jobs", {})
     if not isinstance(jobs, dict) or not jobs:
         return errors + ["Workflow has no jobs"]
     for job in jobs.values():
         permissions = job.get("permissions", {})
         if not isinstance(permissions, dict) or any(
-            name != "contents" or value != "read" for name, value in permissions.items()
+            name not in ({"contents", "actions"} if artifact_reader else {"contents"})
+            or value != "read"
+            for name, value in permissions.items()
         ):
             errors.append("Job grants permissions beyond contents: read")
         if type(job.get("timeout-minutes")) is not int or job["timeout-minutes"] <= 0:
@@ -271,7 +286,9 @@ def audit(root: Path, npm_only: bool = False) -> dict[str, list[str]]:
     results["actions-policy"] = [
         error
         for path in workflows
-        for error in workflow_violations(yaml_document(root, path))
+        for error in workflow_violations(
+            yaml_document(root, path), path.relative_to(root).as_posix()
+        )
     ]
     return results
 

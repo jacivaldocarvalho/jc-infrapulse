@@ -1,0 +1,131 @@
+name: F3C.3.2 isolated real validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: f3c3-real-validation-fixed-run
+  cancel-in-progress: false
+
+jobs:
+  integrated-validation:
+    name: disposable-runner F3B.1 and Cosign validation
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SOURCE_DIR: ${{ github.workspace }}
+      CONTROLLER_DIR: ${{ github.workspace }}/controller
+      VALIDATOR_DIR: ${{ github.workspace }}/f3c3-validator
+      COSIGN_PASSWORD: ''
+    steps:
+      - name: Initialize runner paths
+        run: |
+          echo "WORK_DIR=$RUNNER_TEMP/infrapulse-f3c3-runner-41238810850" >> "$GITHUB_ENV"
+          echo "TOOL_DIR=$RUNNER_TEMP/infrapulse-f3c3-tools/bin" >> "$GITHUB_ENV"
+
+      - name: Check out the exact F3C.2 evidence source commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 9f237be45ccd6e7977f50f85d37ebcc32d81a2bb
+          persist-credentials: false
+          submodules: false
+
+      - name: Check out the workflow controller at the dispatch event commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          path: controller
+          persist-credentials: false
+          submodules: false
+
+      - name: Check out the approved F3C.3.1 validator implementation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 3daeae2b308896edea3a88a0a43e1063d06c1768
+          path: f3c3-validator
+          fetch-depth: 3
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Create the bounded private workspace and validate source run metadata
+        timeout-minutes: 3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py"
+          preflight --work-dir "$WORK_DIR"
+
+      - name: Download only artifacts pinned to the validated source run
+        timeout-minutes: 15
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python3 "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py"
+          download --work-dir "$WORK_DIR"
+
+      - name: Install the hash-locked F3B.1 validator dependencies
+        timeout-minutes: 8
+        run: |
+          python3 -m venv "$RUNNER_TEMP/infrapulse-f3c3-tools"
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" -m pip --isolated install \
+            --require-hashes --only-binary=:all: --disable-pip-version-check \
+            --index-url https://pypi.org/simple \
+            -r "$SOURCE_DIR/security/sbom-tools.lock"
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" -m pip check
+
+      - name: Verify pinned checkouts and overlay only approved validator modules
+        run: |
+          test "$(git -C "$CONTROLLER_DIR" rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C "$SOURCE_DIR" rev-parse HEAD)" = 9f237be45ccd6e7977f50f85d37ebcc32d81a2bb
+          test "$(git -C "$VALIDATOR_DIR" rev-parse HEAD)" = 3daeae2b308896edea3a88a0a43e1063d06c1768
+          git -C "$VALIDATOR_DIR" merge-base --is-ancestor \
+            9f237be45ccd6e7977f50f85d37ebcc32d81a2bb \
+            3daeae2b308896edea3a88a0a43e1063d06c1768
+          install -m 0644 "$VALIDATOR_DIR/scripts/ci_evidence_signature.py" "$SOURCE_DIR/scripts/ci_evidence_signature.py"
+          install -m 0644 "$VALIDATOR_DIR/scripts/provenance_signature.py" "$SOURCE_DIR/scripts/provenance_signature.py"
+          install -m 0644 "$VALIDATOR_DIR/scripts/provenance.py" "$SOURCE_DIR/scripts/provenance.py"
+          install -m 0644 "$VALIDATOR_DIR/scripts/oci_canonicalizer.py" "$SOURCE_DIR/scripts/oci_canonicalizer.py"
+
+      - name: Install pinned Trivy and Cosign with checked-in SHA-256 pins
+        timeout-minutes: 8
+        run: |
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
+            "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-trivy \
+            --project-root "$SOURCE_DIR" --output-dir "$RUNNER_TEMP/sbom-tools/bin"
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python" \
+            "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" install-cosign \
+            --project-root "$SOURCE_DIR" --output "$TOOL_DIR/cosign"
+
+      - name: Validate archives, run F3B.1, and perform disposable-key Cosign round-trip
+        timeout-minutes: 25
+        env:
+          TRIVY_BINARY: ${{ runner.temp }}/sbom-tools/bin/trivy
+          COSIGN_BINARY: ${{ runner.temp }}/infrapulse-f3c3-tools/bin/cosign
+        run: >-
+          "$RUNNER_TEMP/infrapulse-f3c3-tools/bin/python"
+          "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py"
+          execute --work-dir "$WORK_DIR" --project-root "$SOURCE_DIR"
+
+      - name: Remove only the owned private validation workspace
+        if: ${{ always() }}
+        timeout-minutes: 2
+        run: |
+          marker="$WORK_DIR/.infrapulse-f3c3-owner.json"
+          if [[ -d "$WORK_DIR" && ! -L "$WORK_DIR" && -f "$marker" && ! -L "$marker" ]]; then
+            python3 "$CONTROLLER_DIR/scripts/ci_f3c3_validation.py" cleanup --work-dir "$WORK_DIR"
+          else
+            echo "No complete owned workspace to clean; runner is disposable."
+          fi
