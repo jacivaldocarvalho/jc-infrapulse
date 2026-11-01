@@ -9,10 +9,106 @@ from pathlib import Path
 from unittest.mock import patch
 
 import provenance
+import provenance_signature as signature
 import sbom
 
 
 class ProvenanceTests(unittest.TestCase):
+    def test_trusted_image_names_reach_real_provenance_validation(self) -> None:
+        for index, name in enumerate(("backend-image", "nginx-image"), start=1):
+            with self.subTest(name=name):
+                image_id = "sha256:" + str(index) * 64
+                self.doc = {
+                    "metadata": {
+                        "component": {
+                            "type": "container",
+                            "name": image_id,
+                            "bom-ref": "root",
+                            "purl": f"pkg:oci/{name}@{image_id}",
+                        }
+                    },
+                    "components": [
+                        {"bom-ref": "one", "type": "library", "name": "one"}
+                    ],
+                    "dependencies": [
+                        {"ref": "root", "dependsOn": ["one"]},
+                        {"ref": "one", "dependsOn": []},
+                    ],
+                }
+                self.data.pop("source", None)
+                self.data.pop("source_sha256", None)
+                self.data.update(
+                    image_id=image_id, status="COVERAGE_PARTIAL", components=1
+                )
+                self.save()
+
+                def generate(
+                    _tool: Path, _image: str, output: Path, **_kwargs: object
+                ) -> dict:
+                    output.write_bytes(self.artifact.read_bytes())
+                    return {
+                        "generation_status": "SUCCESS",
+                        "status": "COVERAGE_PARTIAL",
+                        "image_id": _image,
+                        "sha256": sbom.digest(self.artifact),
+                        "components": 1,
+                    }
+
+                with (
+                    patch.object(
+                        sbom, "resolve_image", return_value={"image_id": image_id}
+                    ),
+                    patch.object(sbom, "generate_image", side_effect=generate),
+                ):
+                    document = provenance.statement(
+                        self.artifact, self.manifest, self.tool, image_id, name
+                    )
+                    statement = self.artifact.parent / "statement.json"
+                    statement.write_text(json.dumps(document))
+                    signature._validate_provenance(
+                        statement,
+                        self.artifact,
+                        self.manifest,
+                        self.tool,
+                        image_id,
+                        name,
+                    )
+                    with self.assertRaises(ValueError):
+                        signature._validate_provenance(
+                            statement,
+                            self.artifact,
+                            self.manifest,
+                            self.tool,
+                            "sha256:" + "f" * 64,
+                            name,
+                        )
+                    with self.assertRaises(ValueError):
+                        signature._validate_provenance(
+                            statement,
+                            self.artifact,
+                            self.manifest,
+                            self.tool,
+                            None,
+                            name,
+                        )
+                    for invalid in (
+                        None,
+                        "untrusted-image",
+                        "nginx-image" if name == "backend-image" else "backend-image",
+                    ):
+                        with (
+                            self.subTest(invalid=invalid),
+                            self.assertRaises(ValueError),
+                        ):
+                            signature._validate_provenance(
+                                statement,
+                                self.artifact,
+                                self.manifest,
+                                self.tool,
+                                image_id,
+                                invalid,
+                            )
+
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
