@@ -560,6 +560,15 @@ jobs:
         run: |
           python3 scripts/test_supply_chain.py
           python3 scripts/test_locked_install.py
+      - name: Exercise image coverage and OCI layer regressions
+        run: |
+          python3 -m venv "${{ runner.temp }}/coverage-tools"
+          "${{ runner.temp }}/coverage-tools/bin/python" -m pip --isolated install \
+            --require-hashes --only-binary=:all: --disable-pip-version-check \
+            --index-url https://pypi.org/simple -r security/sbom-tools.lock
+          "${{ runner.temp }}/coverage-tools/bin/python" -m pip check
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_image_coverage_contract.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_virtual_layers.py
       - name: Scan checkout and HEAD history with verified Gitleaks and fixtures
         run: python3 scripts/check_secrets.py --report "${{ runner.temp }}/security-foundations/secrets.json"
       - name: Enforce every supply chain policy
