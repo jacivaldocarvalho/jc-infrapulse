@@ -49,9 +49,9 @@ jobs:
       - name: Check out the approved F3C.3.1 validator implementation
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: 09a281533864c1c7c582a14ba08992ffa4976da4
+          ref: 3daeae2b308896edea3a88a0a43e1063d06c1768
           path: f3c3-validator
-          fetch-depth: 2
+          fetch-depth: 3
           persist-credentials: false
           submodules: false
 
@@ -90,12 +90,13 @@ jobs:
         run: |
           test "$(git -C "$CONTROLLER_DIR" rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git -C "$SOURCE_DIR" rev-parse HEAD)" = 9f237be45ccd6e7977f50f85d37ebcc32d81a2bb
-          test "$(git -C "$VALIDATOR_DIR" rev-parse HEAD)" = 09a281533864c1c7c582a14ba08992ffa4976da4
+          test "$(git -C "$VALIDATOR_DIR" rev-parse HEAD)" = 3daeae2b308896edea3a88a0a43e1063d06c1768
           git -C "$VALIDATOR_DIR" merge-base --is-ancestor \
             9f237be45ccd6e7977f50f85d37ebcc32d81a2bb \
-            09a281533864c1c7c582a14ba08992ffa4976da4
+            3daeae2b308896edea3a88a0a43e1063d06c1768
           install -m 0644 "$VALIDATOR_DIR/scripts/ci_evidence_signature.py" "$SOURCE_DIR/scripts/ci_evidence_signature.py"
           install -m 0644 "$VALIDATOR_DIR/scripts/provenance_signature.py" "$SOURCE_DIR/scripts/provenance_signature.py"
+          install -m 0644 "$VALIDATOR_DIR/scripts/provenance.py" "$SOURCE_DIR/scripts/provenance.py"
           install -m 0644 "$VALIDATOR_DIR/scripts/oci_canonicalizer.py" "$SOURCE_DIR/scripts/oci_canonicalizer.py"
 
       - name: Install pinned Trivy and Cosign with checked-in SHA-256 pins
