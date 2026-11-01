@@ -20,6 +20,7 @@ import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +107,60 @@ def _phase(name: str) -> Iterator[None]:
         raise ValidationError("Integrated validation phase failed") from None
     else:
         print(f"PHASE {name} PASS", flush=True)
+
+
+@contextmanager
+def _subphase(marker: str) -> Iterator[None]:
+    print(f"SUBPHASE {marker} START", flush=True)
+    try:
+        yield
+    except Exception as exc:
+        allowed = (ValidationError, OSError, ValueError, KeyError, TypeError)
+        kind = type(exc).__name__ if type(exc) in allowed else "OtherError"
+        print(f"SUBPHASE {marker} FAIL {kind}", file=sys.stderr, flush=True)
+        raise
+    print(f"SUBPHASE {marker} PASS", flush=True)
+
+
+@contextmanager
+def _sign_diagnostics(evidence: Any, signature: Any) -> Iterator[None]:
+    """Temporarily instrument fixed validator entry points without changing results."""
+    targets = (
+        (evidence, "_load_and_validate", "evidence_manifest"),
+        (evidence, "_validate_handoff_archives", "handoff_archives"),
+        (evidence, "_validate_signature_output", "signature_destination"),
+        (signature, "_trusted_key", "trust_policy"),
+        (signature, "_validate_provenance", "provenance"),
+        (signature, "sign_blob_bytes", "sign_blob"),
+        (signature, "verify_blob_bytes", "verify_blob"),
+        (signature, "verify_signature", "verify_component"),
+    )
+    originals = []
+    component_ids = ("python", "npm", "backend_image", "nginx_image")
+    provenance_count = 0
+
+    def instrument(original: Any, label: str) -> Any:
+        @wraps(original)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            nonlocal provenance_count
+            marker = label
+            if label == "provenance":
+                marker = "provenance_" + component_ids[provenance_count % 4]
+                provenance_count += 1
+            with _subphase(marker):
+                return original(*args, **kwargs)
+
+        return wrapped
+
+    try:
+        for module, attribute, label in targets:
+            original = getattr(module, attribute)
+            originals.append((module, attribute, original))
+            setattr(module, attribute, instrument(original, label))
+        yield
+    finally:
+        for module, attribute, original in reversed(originals):
+            setattr(module, attribute, original)
 
 
 def _pairs_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -1058,32 +1113,34 @@ def execute(work_dir: Path, project_root: Path, trivy: Path, cosign: Path) -> No
     with _phase("sign_verify"):
         crypto_dir = work_dir / "crypto"
         crypto_dir.mkdir(mode=0o700)
-        private_key, _, policy, policy_sha, key_id = _generate_test_key(
-            cosign, crypto_dir
-        )
+        with _subphase("disposable_keys"):
+            private_key, _, policy, policy_sha, key_id = _generate_test_key(
+                cosign, crypto_dir
+            )
         signatures_dir = work_dir / "signatures"
         prior_run_id = os.environ.get("GITHUB_RUN_ID")
         prior_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
         os.environ["GITHUB_RUN_ID"] = RUN_ID
         os.environ["GITHUB_RUN_ATTEMPT"] = str(RUN_ATTEMPT)
         try:
-            result = evidence.sign_evidence(
-                evidence_dir,
-                handoff_dir,
-                signatures_dir,
-                private_key,
-                cosign,
-                trivy,
-                policy,
-                policy_sha,
-                key_id,
-                EVIDENCE_COMMIT,
-                RUN_ID,
-                RUN_ATTEMPT,
-                REPOSITORY,
-                image_ids,
-                canonicalize_oci=True,
-            )
+            with _subphase("sign_evidence"), _sign_diagnostics(evidence, signature):
+                result = evidence.sign_evidence(
+                    evidence_dir,
+                    handoff_dir,
+                    signatures_dir,
+                    private_key,
+                    cosign,
+                    trivy,
+                    policy,
+                    policy_sha,
+                    key_id,
+                    EVIDENCE_COMMIT,
+                    RUN_ID,
+                    RUN_ATTEMPT,
+                    REPOSITORY,
+                    image_ids,
+                    canonicalize_oci=True,
+                )
             if (
                 result.get("integrity") != "INTEGRITY_VERIFIED"
                 or result.get("signature") != "SIGNATURE_VALID"
@@ -1092,22 +1149,23 @@ def execute(work_dir: Path, project_root: Path, trivy: Path, cosign: Path) -> No
                 raise ValidationError(
                     "Signing round-trip did not return all required states"
                 )
-            verified = evidence.verify_evidence(
-                evidence_dir,
-                handoff_dir,
-                signatures_dir,
-                cosign,
-                trivy,
-                policy,
-                policy_sha,
-                key_id,
-                EVIDENCE_COMMIT,
-                RUN_ID,
-                RUN_ATTEMPT,
-                REPOSITORY,
-                image_ids,
-                canonicalize_oci=True,
-            )
+            with _subphase("verify_evidence"), _sign_diagnostics(evidence, signature):
+                verified = evidence.verify_evidence(
+                    evidence_dir,
+                    handoff_dir,
+                    signatures_dir,
+                    cosign,
+                    trivy,
+                    policy,
+                    policy_sha,
+                    key_id,
+                    EVIDENCE_COMMIT,
+                    RUN_ID,
+                    RUN_ATTEMPT,
+                    REPOSITORY,
+                    image_ids,
+                    canonicalize_oci=True,
+                )
         finally:
             if prior_run_id is None:
                 os.environ.pop("GITHUB_RUN_ID", None)
