@@ -126,7 +126,32 @@ class SignatureTests(unittest.TestCase):
             args = run_cosign.call_args.args[1]
             self.assertEqual(args[0], "verify-blob")
             self.assertIn("--offline", args)
+            self.assertIn("--insecure-ignore-tlog", args)
+            self.assertEqual(Path(args[args.index("--key") + 1]).name, "trusted.pub")
             self.assertNotIn(str(self.key_id), args)
+
+    def test_blob_verify_keeps_crypto_with_pinned_key_without_rekor(self) -> None:
+        with (
+            patch.object(signature, "verify_cosign"),
+            patch.object(signature, "_run_cosign") as run_cosign,
+        ):
+            result = signature.verify_blob_bytes(
+                b"exact artifact bytes",
+                b'{"bundle":"fixture"}',
+                self.policy,
+                hashlib.sha256(self.policy.read_bytes()).hexdigest(),
+                self.key_id,
+                self.cosign,
+            )
+        self.assertEqual(
+            result,
+            {"signature": "SIGNATURE_VALID", "signer": "TRUSTED_SIGNER"},
+        )
+        args = run_cosign.call_args.args[1]
+        self.assertEqual(args[0], "verify-blob")
+        self.assertIn("--offline", args)
+        self.assertIn("--insecure-ignore-tlog", args)
+        self.assertEqual(Path(args[args.index("--key") + 1]).name, "trusted.pub")
 
     def test_policy_tampering_and_unknown_key_fail_closed(self) -> None:
         with (

@@ -155,6 +155,121 @@ def verify_cosign(tool: Path) -> dict[str, Any]:
     return _tool_lock()
 
 
+def sign_blob_bytes(
+    payload: bytes,
+    bundle_path: Path,
+    private_key: Path,
+    cosign: Path,
+    protected_inputs: list[Path] | None = None,
+) -> None:
+    """Sign a validated byte snapshot; callers own semantic validation."""
+    if (
+        not isinstance(payload, bytes)
+        or not payload
+        or len(payload) > MAX_STATEMENT_BYTES
+    ):
+        raise ValueError("Blob payload is empty or exceeds the size limit")
+    verify_cosign(cosign)
+    key_fd, key_bytes = _open_regular(private_key.absolute(), MAX_KEY_BYTES)
+    os.close(key_fd)
+    if not key_bytes:
+        raise ValueError("Signing key is empty")
+    inputs = [private_key, cosign, *(protected_inputs or [])]
+    sbom.check_output(bundle_path, inputs)
+    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        dir=bundle_path.parent, prefix=".cosign-blob-"
+    ) as temporary:
+        temporary_path = Path(temporary) / "bundle.sigstore.json"
+        sbom.check_output(temporary_path, inputs)
+        with tempfile.TemporaryDirectory(prefix="infrapulse-cosign-blob-") as work:
+            snapshot = Path(work) / "payload.bin"
+            private = Path(work) / "private.key"
+            snapshot.write_bytes(payload)
+            private.write_bytes(key_bytes)
+            snapshot.chmod(0o600)
+            private.chmod(0o600)
+            _run_cosign(
+                cosign,
+                [
+                    "sign-blob",
+                    "--yes",
+                    # Explicitly avoid Rekor/TUF service access for local signing.
+                    "--tlog-upload=false",
+                    "--use-signing-config=false",
+                    "--key",
+                    str(private),
+                    "--bundle",
+                    str(temporary_path),
+                    str(snapshot),
+                ],
+            )
+        _, bundle = _json_file(temporary_path, MAX_BUNDLE_BYTES)
+        if not bundle:
+            raise ValueError("Cosign produced an empty bundle")
+        sbom.check_output(bundle_path, inputs)
+        os.replace(temporary_path, bundle_path)
+
+
+def verify_blob_bytes(
+    payload: bytes,
+    bundle_bytes: bytes,
+    policy_path: Path,
+    policy_sha256: str,
+    key_id: str,
+    cosign: Path,
+) -> dict[str, str]:
+    """Verify exact blob bytes offline against the independently pinned policy."""
+    if (
+        not isinstance(payload, bytes)
+        or not payload
+        or len(payload) > MAX_STATEMENT_BYTES
+    ):
+        raise ValueError("Blob payload is empty or exceeds the size limit")
+    if (
+        not isinstance(bundle_bytes, bytes)
+        or not bundle_bytes
+        or len(bundle_bytes) > MAX_BUNDLE_BYTES
+    ):
+        raise ValueError("Signature bundle is empty or exceeds the size limit")
+    verify_cosign(cosign)
+    try:
+        bundle = json.loads(bundle_bytes, object_pairs_hook=_pairs_no_duplicates)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Malformed signature bundle") from exc
+    if not isinstance(bundle, dict) or not bundle:
+        raise ValueError("Signature bundle must be a non-empty object")
+    public_key = _trusted_key(policy_path, policy_sha256, key_id)
+    with tempfile.TemporaryDirectory(prefix="infrapulse-cosign-blob-verify-") as work:
+        directory = Path(work)
+        key_path = directory / "trusted.pub"
+        payload_path = directory / "payload.bin"
+        bundle_path = directory / "bundle.sigstore.json"
+        for path, data in (
+            (key_path, public_key),
+            (payload_path, payload),
+            (bundle_path, bundle_bytes),
+        ):
+            path.write_bytes(data)
+            path.chmod(0o600)
+        _run_cosign(
+            cosign,
+            [
+                "verify-blob",
+                "--offline",
+                # Self-managed keys are not logged; retain signature checking
+                # while explicitly omitting Rekor inclusion verification.
+                "--insecure-ignore-tlog",
+                "--key",
+                str(key_path),
+                "--bundle",
+                str(bundle_path),
+                str(payload_path),
+            ],
+        )
+    return {"signature": "SIGNATURE_VALID", "signer": "TRUSTED_SIGNER"}
+
+
 def _validate_provenance(
     statement_path: Path,
     sbom_path: Path,
@@ -284,6 +399,9 @@ def verify_signature(
             [
                 "verify-blob",
                 "--offline",
+                # The independently pinned key remains authoritative; these
+                # signatures intentionally have no transparency-log entry.
+                "--insecure-ignore-tlog",
                 "--key",
                 str(key_path),
                 "--bundle",
