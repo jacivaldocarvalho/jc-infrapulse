@@ -35,6 +35,7 @@ MAX_EVIDENCE_TOTAL = 128 * 1024 * 1024
 MAX_HANDOFF_TOTAL = 4 * GIB
 MAX_REPORT_TOTAL = 2 * 1024 * 1024
 MAX_IMAGE_BYTES = 2 * GIB
+COSIGN_V313_LINUX_AMD64_BYTES = 141_178_250
 MIN_DOWNLOAD_HEADROOM = 2 * GIB
 LOAD_HEADROOM = 1024**3
 OWNER_MARKER = ".infrapulse-f3c3-owner.json"
@@ -1183,7 +1184,7 @@ def install_cosign(project_root: Path, output: Path) -> None:
             try:
                 while chunk := response.read(1024 * 1024):
                     size += len(chunk)
-                    if size > 128 * 1024 * 1024:
+                    if size > COSIGN_V313_LINUX_AMD64_BYTES:
                         raise ValidationError("Cosign binary exceeded its size limit")
                     h.update(chunk)
                     view = memoryview(chunk)
@@ -1198,7 +1199,10 @@ def install_cosign(project_root: Path, output: Path) -> None:
     except (OSError, urllib.error.URLError):
         temp.unlink(missing_ok=True)
         raise ValidationError("Pinned Cosign download failed") from None
-    if h.hexdigest() != digest or size == 0:
+    if size != COSIGN_V313_LINUX_AMD64_BYTES:
+        temp.unlink(missing_ok=True)
+        raise ValidationError("Cosign binary size mismatch")
+    if h.hexdigest() != digest:
         temp.unlink(missing_ok=True)
         raise ValidationError("Pinned Cosign SHA-256 mismatch")
     os.chmod(temp, 0o700)
