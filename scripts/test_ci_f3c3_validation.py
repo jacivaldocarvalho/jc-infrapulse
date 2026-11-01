@@ -56,6 +56,92 @@ def _image_record(image_id: str) -> dict[str, object]:
 
 
 class RunnerValidationTests(unittest.TestCase):
+    def test_sign_subphases_sanitize_errors_and_restore_functions(self) -> None:
+        for failing in ("_load_and_validate", "_trusted_key", "sign_blob_bytes"):
+            with self.subTest(failing=failing):
+
+                def operation(*args: object, **kwargs: object) -> None:
+                    return None
+
+                evidence = SimpleNamespace(
+                    **{
+                        name: operation
+                        for name in (
+                            "_load_and_validate",
+                            "_validate_handoff_archives",
+                            "_validate_signature_output",
+                        )
+                    }
+                )
+                signature = SimpleNamespace(
+                    **{
+                        name: operation
+                        for name in (
+                            "_trusted_key",
+                            "_validate_provenance",
+                            "sign_blob_bytes",
+                            "verify_blob_bytes",
+                            "verify_signature",
+                        )
+                    }
+                )
+                module = evidence if hasattr(evidence, failing) else signature
+                secret = "secret /private/path payload"
+                original = unittest.mock.Mock(side_effect=ValueError(secret))
+                setattr(module, failing, original)
+                output, errors = io.StringIO(), io.StringIO()
+                with (
+                    redirect_stdout(output),
+                    redirect_stderr(errors),
+                    self.assertRaisesRegex(ValueError, secret),
+                    validation._sign_diagnostics(evidence, signature),
+                ):
+                    getattr(module, failing)(secret)
+                self.assertIs(getattr(module, failing), original)
+                log = output.getvalue() + errors.getvalue()
+                marker = {
+                    "_load_and_validate": "evidence_manifest",
+                    "_trusted_key": "trust_policy",
+                    "sign_blob_bytes": "sign_blob",
+                }[failing]
+                self.assertIn(f"SUBPHASE {marker} START", log)
+                self.assertIn(f"SUBPHASE {marker} FAIL ValueError", log)
+                self.assertNotIn(secret, log)
+
+    def test_provenance_markers_follow_fixed_validator_order(self) -> None:
+        def operation(*args: object, **kwargs: object) -> None:
+            return None
+
+        evidence = SimpleNamespace(
+            **{
+                name: operation
+                for name in (
+                    "_load_and_validate",
+                    "_validate_handoff_archives",
+                    "_validate_signature_output",
+                )
+            }
+        )
+        signature = SimpleNamespace(
+            **{
+                name: operation
+                for name in (
+                    "_trusted_key",
+                    "_validate_provenance",
+                    "sign_blob_bytes",
+                    "verify_blob_bytes",
+                    "verify_signature",
+                )
+            }
+        )
+        output = io.StringIO()
+        with redirect_stdout(output), validation._sign_diagnostics(evidence, signature):
+            for _ in range(4):
+                signature._validate_provenance("untrusted artifact name")
+        for name in ("python", "npm", "backend_image", "nginx_image"):
+            self.assertIn(f"SUBPHASE provenance_{name} PASS", output.getvalue())
+        self.assertNotIn("untrusted artifact name", output.getvalue())
+
     def test_execute_phase_failures_are_sanitized_and_nonzero(self) -> None:
         for phase in ("checkout", "tools", "extract"):
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as directory:
