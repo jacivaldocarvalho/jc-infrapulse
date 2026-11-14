@@ -47,9 +47,7 @@ def replace_numeric(data: bytes, start: int, end: int, value: bytes) -> bytes:
 
 class VirtualLayersTests(unittest.TestCase):
     def test_gnu_ustar_profile_is_supported(self) -> None:
-        data = tar_bytes(
-            [("etc/example", "file", b"value")], format=tarfile.GNU_FORMAT
-        )
+        data = tar_bytes([("etc/example", "file", b"value")], format=tarfile.GNU_FORMAT)
         self.assertEqual(virtual.read_layers([layer(data)])[0][0].path, "etc/example")
 
     def test_pax_utf8_path_and_symlink_target_are_supported(self) -> None:

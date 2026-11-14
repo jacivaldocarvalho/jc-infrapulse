@@ -76,8 +76,7 @@ def _path(value: str, *, allow_whiteout: bool = False) -> str:
     if len(encoded) > MAX_PATH_BYTES:
         raise ValueError("Invalid path length")
     if any(
-        ord(char) < 32 or 0x7F <= ord(char) <= 0x9F or char == "\\"
-        for char in value
+        ord(char) < 32 or 0x7F <= ord(char) <= 0x9F or char == "\\" for char in value
     ):
         raise ValueError("Unsupported path characters")
     parts = value.split("/")
@@ -225,9 +224,7 @@ def _read_layer(
         if name != ".":
             name = _path(name, allow_whiteout=rootfs)
         components = name.split("/") if name != "." else ["."]
-        if name != "." and any(
-            part.startswith(".wh.") for part in components[:-1]
-        ):
+        if name != "." and any(part.startswith(".wh.") for part in components[:-1]):
             raise ValueError("Whiteout in parent path")
         if not rootfs and kind == "hardlink":
             raise ValueError("Unsupported TAR entry type")
