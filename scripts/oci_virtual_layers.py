@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 BLOCK = 512
@@ -41,6 +41,7 @@ class Entry:
     mtime: int
     link_target: str | None
     content_sha256: str | None = None
+    content_offset: int | None = field(default=None, compare=False, repr=False)
 
 
 def _text(field: bytes) -> str:
@@ -165,7 +166,18 @@ def _read_layer(
             else None
         )
         entries.append(
-            Entry(name, kind, size, mode, uid, gid, mtime, link or None, content_hash)
+            Entry(
+                name,
+                kind,
+                size,
+                mode,
+                uid,
+                gid,
+                mtime,
+                link or None,
+                content_hash,
+                offset + BLOCK if kind == "file" else None,
+            )
         )
         offset = end
     raise ValueError("Missing TAR terminator")
