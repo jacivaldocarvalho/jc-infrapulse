@@ -189,5 +189,111 @@ class VirtualLayersTests(unittest.TestCase):
                 virtual.read_layers([layer(payload)])
 
 
+class VirtualRootfsTests(unittest.TestCase):
+    def build(
+        self, *groups: list[tuple[str, str, bytes]]
+    ) -> dict[str, virtual.RootEntry]:
+        return virtual.reconstruct_rootfs([layer(tar_bytes(group)) for group in groups])
+
+    def test_whiteouts_apply_before_same_layer_entries(self) -> None:
+        result = self.build(
+            [("dir/old", "file", b"x"), ("dir/nested/a", "file", b"x")],
+            [
+                ("dir/new", "file", b"y"),
+                ("dir/.wh..wh..opq", "file", b""),
+                ("dir/old", "file", b"z"),
+            ],
+        )
+        self.assertEqual(list(result), ["dir/new", "dir/old"])
+        self.assertEqual(result["dir/old"].layer, 1)
+
+    def test_whiteout_and_replacement_preserve_same_layer(self) -> None:
+        result = self.build(
+            [("a/old", "file", b"x"), ("b", "file", b"x")],
+            [("a/new", "file", b"y"), (".wh.a", "file", b""), (".wh.b", "file", b"")],
+        )
+        self.assertEqual(list(result), ["a/new"])
+
+    def test_hardlink_preserves_original_file_after_replacement(self) -> None:
+        result = self.build(
+            [("a", "file", b"x"), ("b", "hardlink", b"a")],
+            [("a", "file", b"y"), ("c", "hardlink", b"b")],
+        )
+        self.assertEqual(result["b"].content, (0, "a"))
+        self.assertEqual(result["c"].content, (0, "a"))
+        self.assertEqual(result["a"].content, (1, "a"))
+
+    def test_rejects_invalid_links_and_non_directory_parents(self) -> None:
+        for groups in (
+            ([("a", "hardlink", b"missing")],),
+            ([("a", "hardlink", b"a")],),
+            ([("a", "symlink", b"target")], [("a/b", "file", b"")]),
+            ([("a", "symlink", b"target")], [("b", "hardlink", b"a")]),
+            ([("a", "file", b"")], [("a/.wh.b", "file", b"")]),
+        ):
+            with self.subTest(groups=groups), self.assertRaises(ValueError):
+                self.build(*groups)
+
+    def test_directory_replaced_by_file_removes_descendants(self) -> None:
+        result = self.build([("a/b", "file", b"x")], [("a", "file", b"y")])
+        self.assertEqual(list(result), ["a"])
+
+    def test_opaque_and_whiteout_order_is_deterministic(self) -> None:
+        lower = [("d/old", "file", b"x"), ("d/sub/old", "file", b"y")]
+        upper = [
+            ("d/new", "file", b"z"),
+            ("d/.wh..wh..opq", "file", b""),
+            ("d/.wh.old", "file", b""),
+        ]
+        self.assertEqual(
+            self.build(lower, upper), self.build(lower, list(reversed(upper)))
+        )
+
+    def test_root_opaque_and_whiteout_hardlink_lifetime(self) -> None:
+        result = self.build(
+            [("a", "file", b"x"), ("link", "hardlink", b"a")],
+            [(".wh.a", "file", b""), ("copy", "hardlink", b"link")],
+        )
+        self.assertEqual(result["copy"].content, (0, "a"))
+        self.assertNotIn("a", result)
+        self.assertEqual(
+            list(
+                self.build(
+                    [("a", "file", b"x")],
+                    [("b", "file", b"y"), (".wh..wh..opq", "file", b"")],
+                )
+            ),
+            ["b"],
+        )
+
+    def test_whiteout_parent_validation_does_not_depend_on_order(self) -> None:
+        lower = [("a", "symlink", b"target")]
+        upper = [(".wh.a", "file", b""), ("a/.wh.b", "file", b"")]
+        for entries in (upper, list(reversed(upper))):
+            with (
+                self.subTest(entries=entries),
+                self.assertRaisesRegex(ValueError, "Whiteout traverses non-directory"),
+            ):
+                self.build(lower, entries)
+
+    def test_hardlink_cycles_and_forward_references_fail(self) -> None:
+        for entries in (
+            [("a", "hardlink", b"b"), ("b", "hardlink", b"a")],
+            [("a", "hardlink", b"b"), ("b", "file", b"data")],
+            [("a", "hardlink", b"../outside")],
+        ):
+            with self.subTest(entries=entries), self.assertRaises(ValueError):
+                self.build(entries)
+
+    def test_rootfs_enforces_aggregate_entry_limit(self) -> None:
+        with patch.object(virtual, "MAX_ENTRIES", 1), self.assertRaises(ValueError):
+            self.build([("a", "file", b"")], [("b", "file", b"")])
+
+    def test_invalid_whiteouts_fail_closed(self) -> None:
+        for name, data in ((".wh.", b""), (".wh...", b""), (".wh.a", b"data")):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.build([(name, "file", data)])
+
+
 if __name__ == "__main__":
     unittest.main()
