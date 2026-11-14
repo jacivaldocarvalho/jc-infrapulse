@@ -10,9 +10,11 @@ from unittest.mock import patch
 import oci_virtual_layers as virtual
 
 
-def tar_bytes(entries: list[tuple[str, str, bytes]]) -> bytes:
+def tar_bytes(
+    entries: list[tuple[str, str, bytes]], *, format: int = tarfile.USTAR_FORMAT
+) -> bytes:
     stream = io.BytesIO()
-    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+    with tarfile.open(fileobj=stream, mode="w", format=format) as archive:
         for name, kind, data in entries:
             item = tarfile.TarInfo(name)
             if kind == "file":
@@ -23,7 +25,7 @@ def tar_bytes(entries: list[tuple[str, str, bytes]]) -> bytes:
                 archive.addfile(item)
             else:
                 item.type = tarfile.SYMTYPE if kind == "symlink" else tarfile.LNKTYPE
-                item.linkname = data.decode("ascii")
+                item.linkname = data.decode("utf-8")
                 archive.addfile(item)
     return stream.getvalue()
 
@@ -44,6 +46,51 @@ def replace_numeric(data: bytes, start: int, end: int, value: bytes) -> bytes:
 
 
 class VirtualLayersTests(unittest.TestCase):
+    def test_gnu_ustar_profile_is_supported(self) -> None:
+        data = tar_bytes(
+            [("etc/example", "file", b"value")], format=tarfile.GNU_FORMAT
+        )
+        self.assertEqual(virtual.read_layers([layer(data)])[0][0].path, "etc/example")
+
+    def test_pax_utf8_path_and_symlink_target_are_supported(self) -> None:
+        data = tar_bytes(
+            [
+                ("café/example.txt", "file", b"value"),
+                ("café/link", "symlink", "/opt/café/example.txt".encode()),
+            ],
+            format=tarfile.PAX_FORMAT,
+        )
+        entries = virtual.read_layers([layer(data)])[0]
+        self.assertEqual(entries[0].path, "café/example.txt")
+        self.assertEqual(entries[1].link_target, "/opt/café/example.txt")
+
+    def test_pax_rejects_unknown_duplicate_and_malformed_metadata(self) -> None:
+        for payload in (
+            b"9 uid=0\n",
+            b"9 path=a\n9 path=b\n",
+            b"99 path=a\n",
+            b"9 path=\xff\n",
+        ):
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                virtual._pax_records(payload)
+
+    def test_pax_extension_without_following_entry_is_rejected(self) -> None:
+        raw = tar_bytes(
+            [("café/example.txt", "file", b"value")],
+            format=tarfile.PAX_FORMAT,
+        )
+        pax_size = int(raw[124:136].strip(b" \0"), 8)
+        next_header = 512 + ((pax_size + 511) // 512) * 512
+        dangling = raw[:next_header] + bytes(1024)
+        with self.assertRaisesRegex(ValueError, "Dangling PAX"):
+            virtual.read_layers([layer(dangling)])
+
+    def test_controlled_layer_limit_accepts_real_image_sized_layer(self) -> None:
+        raw = tar_bytes([("large", "file", b"x" * (17 * 1024 * 1024))])
+        self.assertLess(len(raw), virtual.MAX_LAYER_BYTES)
+        result = virtual.read_layers([layer(raw)])
+        self.assertEqual(result[0][0].size, 17 * 1024 * 1024)
+
     def test_leading_nul_size_cannot_disagree_with_tarfile(self) -> None:
         raw = tar_bytes([("a", "file", b"X")])
         ambiguous = replace_numeric(raw, 124, 136, b"\0" + b"00000000001")
@@ -142,8 +189,8 @@ class VirtualLayersTests(unittest.TestCase):
             ("a//b", "file", b""),
             ("a/.wh.b", "file", b""),
             ("hard", "hardlink", b"file"),
-            ("link", "symlink", b"../outside"),
             ("bad\\name", "file", b""),
+            ("link", "symlink", b"bad\nname"),
         ):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 virtual.read_layers([layer(tar_bytes([(name, kind, value)]))])
