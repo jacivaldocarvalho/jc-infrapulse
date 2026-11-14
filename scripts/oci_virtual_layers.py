@@ -40,6 +40,7 @@ class Entry:
     gid: int
     mtime: int
     link_target: str | None
+    content_sha256: str | None = None
 
 
 def _text(field: bytes) -> str:
@@ -158,7 +159,14 @@ def _read_layer(
         end = offset + BLOCK + ((size + BLOCK - 1) // BLOCK) * BLOCK
         if end > len(data) or any(data[offset + BLOCK + size : end]):
             raise ValueError("Truncated TAR member or invalid padding")
-        entries.append(Entry(name, kind, size, mode, uid, gid, mtime, link or None))
+        content_hash = (
+            hashlib.sha256(data[offset + BLOCK : offset + BLOCK + size]).hexdigest()
+            if kind == "file"
+            else None
+        )
+        entries.append(
+            Entry(name, kind, size, mode, uid, gid, mtime, link or None, content_hash)
+        )
         offset = end
     raise ValueError("Missing TAR terminator")
 
@@ -207,7 +215,12 @@ def reconstruct_rootfs(layers: list[Layer]) -> dict[str, RootEntry]:
     Hardlinks must resolve to an already available regular file; forward references
     and links through symlinks are rejected. Coverage is not established here.
     """
-    groups = read_layers(layers, rootfs=True)
+    return _reconstruct_groups(read_layers(layers, rootfs=True))
+
+
+def _reconstruct_groups(
+    groups: tuple[tuple[Entry, ...], ...],
+) -> dict[str, RootEntry]:
     tree: dict[str, RootEntry] = {}
 
     def remove(path: str, *, children_only: bool = False) -> None:
