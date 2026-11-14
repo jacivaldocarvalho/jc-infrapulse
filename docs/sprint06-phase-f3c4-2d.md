@@ -8,12 +8,13 @@ inválidos, fora de escopo ou dos limites são rejeitados. O resultado permanece
 `COVERAGE_PARTIAL`, inclusive quando os inventários coincidem.
 
 Os adaptadores leem `var/lib/dpkg/status`, `lib/apk/db/installed` e arquivos
-explícitos `site-packages/*.dist-info/METADATA` das camadas OCI validadas em
+explícitos `site-packages/*.dist-info/METADATA` e `node_modules/*/package.json`
+das camadas OCI validadas em
 memória; não seguem symlinks no host. O leitor PyPI normaliza nomes e aceita um
 perfil restrito de versões. Purl Trivy suporta perfis restritos Debian, Alpine e
-PyPI; `arch`, `distro` e `epoch` conhecidos são preservados ou comparados com o
+PyPI e npm; `arch`, `distro` e `epoch` conhecidos são preservados ou comparados com o
 distro esperado. Qualificadores e formatos não suportados são lacunas. Diretórios
-implícitos, arquivos não reconhecidos, npm, outros bancos e instalações alternativas
+implícitos, arquivos não reconhecidos, bundles npm, outros bancos e instalações alternativas
 não são cobertos. A ausência de entradas não demonstra inexistência de pacotes.
 
 O SBOM passa por hash esperado, schema CycloneDX 1.7 fixado, metadados de versão

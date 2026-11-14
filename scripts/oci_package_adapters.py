@@ -167,7 +167,7 @@ def trivy_cyclonedx(
             raise TypeError("Invalid component")
         purl = component.get("purl")
         if not isinstance(purl, str) or len(purl) > 1024:
-            unknown.add("component without supported Debian, Alpine or PyPI purl")
+            unknown.add("component without supported Debian, Alpine, PyPI or npm purl")
             continue
         base, separator, query = purl.partition("?")
         qualifiers: dict[str, str] = {}
@@ -187,7 +187,14 @@ def trivy_cyclonedx(
         python_match = re.fullmatch(
             r"pkg:pypi/([A-Za-z0-9][A-Za-z0-9._-]*)@([^?#]+)", base
         )
-        if python_match and not qualifiers:
+        npm_match = re.fullmatch(
+            r"pkg:npm/(?:(?:%40|@)([a-z0-9][a-z0-9._-]*)/)?([a-z0-9][a-z0-9._-]*)@([^?#]+)",
+            base,
+        )
+        if npm_match and not qualifiers:
+            scope, name, encoded_version = npm_match.groups()
+            ecosystem, namespace, arch = "npm", scope or "", ""
+        elif python_match and not qualifiers:
             name, encoded_version = python_match.groups()
             ecosystem, namespace, arch = "pypi", "", ""
             name = re.sub(r"[-_.]+", "-", name).lower()
@@ -216,7 +223,7 @@ def trivy_cyclonedx(
                 )
                 continue
         else:
-            unknown.add("component without supported Debian, Alpine or PyPI purl")
+            unknown.add("component without supported Debian, Alpine, PyPI or npm purl")
             continue
         if re.search(r"%(?![0-9A-Fa-f]{2})", encoded_version):
             raise ValueError("Invalid purl encoding")
@@ -393,4 +400,54 @@ def python_from_layers(
         packages.append(Package("pypi", re.sub(r"[-_.]+", "-", name).lower(), version))
     return Inventory(
         image_id, platform, "python-dist-info", tuple(packages), tuple(sorted(unknown))
+    )
+
+
+def npm_from_layers(layers: list[Layer], *, image_id: str, platform: str) -> Inventory:
+    """Read explicit node_modules package.json files from validated virtual layers."""
+    groups = read_layers(layers, rootfs=True)
+    tree = _reconstruct_groups(groups)
+    sources = {
+        (index, entry.path): entry
+        for index, entries in enumerate(groups)
+        for entry in entries
+    }
+    packages: list[Package] = []
+    for path, item in tree.items():
+        match = re.fullmatch(
+            r"(?:.*/)?node_modules/(?:@([a-z0-9][a-z0-9._-]*)/)?([a-z0-9][a-z0-9._-]*)/package\.json",
+            path,
+        )
+        if not match:
+            continue
+        if item.entry.kind not in {"file", "hardlink"} or item.content is None:
+            raise ValueError("Invalid npm package metadata file type")
+        layer_index, _ = item.content
+        entry = sources[item.content]
+        if (
+            entry.content_offset is None
+            or entry.content_sha256 is None
+            or entry.size > MAX_BYTES
+        ):
+            raise ValueError("Invalid npm package metadata source")
+        raw = layers[layer_index].data[
+            entry.content_offset : entry.content_offset + entry.size
+        ]
+        document = json.loads(
+            _verified(raw, entry.content_sha256), object_pairs_hook=_unique
+        )
+        scope, name = match.groups()
+        expected = f"@{scope}/{name}" if scope else name
+        if not isinstance(document, dict) or document.get("name") != expected:
+            raise ValueError("Npm package identity differs from path")
+        version = document.get("version")
+        if not isinstance(version, str) or not VERSION.fullmatch(version):
+            raise ValueError("Unsupported npm package version")
+        packages.append(Package("npm", name, version, scope or ""))
+    return Inventory(
+        image_id,
+        platform,
+        "npm-package-json",
+        tuple(packages),
+        ("npm package.json covers explicit node_modules packages only",),
     )
