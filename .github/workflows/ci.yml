@@ -574,6 +574,14 @@ jobs:
           "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_package_adapters.py
           "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_reconciliation_report.py
           "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_reconciliation_pipeline.py
+      - name: Validate signed OCI fixture with disposable keys
+        timeout-minutes: 4
+        env:
+          COSIGN_BINARY: ${{ runner.temp }}/infrapulse-oci-cosign/cosign
+        run: |
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/ci_f3c3_validation.py install-cosign \
+            --project-root "$GITHUB_WORKSPACE" --output "$COSIGN_BINARY"
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/validate_signed_oci_fixture.py
       - name: Scan checkout and HEAD history with verified Gitleaks and fixtures
         run: python3 scripts/check_secrets.py --report "${{ runner.temp }}/security-foundations/secrets.json"
       - name: Enforce every supply chain policy

@@ -41,3 +41,11 @@ USTAR de até 16 MiB, o leitor aceitou 8 no backend e 8 no frontend; rejeitou 1
 por tipo TAR não suportado e 3 por caminho não normalizado, respectivamente. Isso
 não valida a imagem inteira ou a origem dos arquivos, nem substitui o teste
 integrado com imagens e assinaturas autenticadas.
+
+O job `security-foundations` também executa `validate_signed_oci_fixture.py` em
+runner GitHub hospedado. A rotina cria uma imagem OCI mínima em memória e duas
+chaves temporárias, instala Cosign a partir do pin existente e testa as assinaturas
+de manifesto e SBOM, além de sete casos negativos. Nenhuma chave ou assinatura é
+publicada; o diretório temporário é removido ao final. Esse teste não modifica os
+gates de cobertura e não substitui a integração do pacote F3C.3.2 ou a validação de
+imagens reais. O resultado dessa execução deve ser consultado no Actions do PR.
