@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InfraPulse preliminary OCI reconciliation report v1",
+  "description": "Structural contract only. No source authentication or completeness is established.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "image_id",
+    "platform",
+    "config_sha256",
+    "sbom_sha256",
+    "coverage",
+    "source_authentication",
+    "source_independence",
+    "independent_only",
+    "sbom_only",
+    "gaps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "image_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "platform": {
+      "const": "linux/amd64"
+    },
+    "config_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "sbom_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "signature_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest",
+        "sbom",
+        "signer",
+        "policy_sha256",
+        "key_id"
+      ],
+      "properties": {
+        "manifest": {
+          "const": "SIGNATURE_VALID"
+        },
+        "sbom": {
+          "const": "SIGNATURE_VALID"
+        },
+        "signer": {
+          "const": "TRUSTED_SIGNER"
+        },
+        "policy_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "coverage": {
+      "const": "COVERAGE_PARTIAL"
+    },
+    "source_authentication": {
+      "const": "UNVERIFIED"
+    },
+    "source_independence": {
+      "const": "UNVERIFIED"
+    },
+    "independent_only": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/definitions/package"
+      }
+    },
+    "sbom_only": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/definitions/package"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 20010,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "SOURCE_AUTHENTICITY_UNVERIFIED"
+          }
+        },
+        {
+          "contains": {
+            "const": "SOURCE_INDEPENDENCE_UNVERIFIED"
+          }
+        },
+        {
+          "contains": {
+            "const": "MANIFEST_AUTHENTICITY_UNVERIFIED"
+          }
+        },
+        {
+          "contains": {
+            "const": "DISTRO_BINDING_UNVERIFIED"
+          }
+        },
+        {
+          "contains": {
+            "const": "COVERAGE_COMPLETENESS_UNPROVEN"
+          }
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ecosystem",
+        "name",
+        "version",
+        "namespace",
+        "architecture"
+      ],
+      "properties": {
+        "ecosystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "namespace": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "architecture": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "manifest_sha256": [
+      "signature_verification"
+    ],
+    "signature_verification": [
+      "manifest_sha256"
+    ]
+  }
+}

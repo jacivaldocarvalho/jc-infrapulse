@@ -290,6 +290,59 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adapters.alpine_from_layers([image], image_id=IMAGE, platform=PLATFORM)
 
+    def test_npm_virtual_packages_and_scoped_purls(self) -> None:
+        raw = b'{"name":"@example/tool","version":"1.2.3"}'
+        image = layer(
+            tar_bytes([("app/node_modules/@example/tool/package.json", "file", raw)])
+        )
+        independent = adapters.npm_from_layers(
+            [image], image_id=IMAGE, platform=PLATFORM
+        )
+        bom = trivy(
+            json.dumps(
+                {
+                    "bomFormat": "CycloneDX",
+                    "components": [{"purl": "pkg:npm/%40example/tool@1.2.3"}],
+                }
+            ).encode()
+        )
+        result = reconciliation.reconcile(
+            independent, bom, expected_image_id=IMAGE, expected_platform=PLATFORM
+        )
+        self.assertEqual(result.independent_only, ())
+        self.assertEqual(result.sbom_only, ())
+        self.assertEqual(independent.packages[0].namespace, "example")
+        self.assertEqual(result.coverage, "COVERAGE_PARTIAL")
+
+    def test_npm_root_node_modules_is_inventoried(self) -> None:
+        image = layer(
+            tar_bytes(
+                [
+                    (
+                        "node_modules/demo/package.json",
+                        "file",
+                        b'{"name":"demo","version":"1.0.0"}',
+                    )
+                ]
+            )
+        )
+        result = adapters.npm_from_layers([image], image_id=IMAGE, platform=PLATFORM)
+        self.assertEqual(
+            [(item.name, item.version) for item in result.packages], [("demo", "1.0.0")]
+        )
+
+    def test_npm_rejects_identity_mismatch_duplicate_json_and_symlinks(self) -> None:
+        for kind, data in (
+            ("file", b'{"name":"other","version":"1"}'),
+            ("file", b'{"name":"x","name":"x","version":"1"}'),
+            ("symlink", b"somewhere"),
+        ):
+            with self.subTest(kind=kind, data=data), self.assertRaises(ValueError):
+                image = layer(
+                    tar_bytes([("app/node_modules/x/package.json", kind, data)])
+                )
+                adapters.npm_from_layers([image], image_id=IMAGE, platform=PLATFORM)
+
     def test_unknown_qualifiers_are_not_dropped(self) -> None:
         raw = json.dumps(
             {
