@@ -354,3 +354,8 @@ da página visível. Métricas históricas usam janelas fixas e não fazem polli
 Veja [operação e limites do dashboard](docs/operations/frontend.md),
 [ADR 0003](docs/adr/0003-frontend-dashboard.md) e
 [relatório da sprint](docs/history/sprints/sprint05-report.md).
+
+## Licença
+
+Este projeto está licenciado sob a [licença MIT](LICENSE). Componentes de
+terceiros permanecem sujeitos às suas respectivas licenças e avisos.

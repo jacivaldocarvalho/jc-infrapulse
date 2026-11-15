@@ -27,3 +27,4 @@ frontend/src/shared/api/generated.d.ts
 frontend/test-results/
 frontend/playwright-report/
 frontend/coverage/
+/articles/
