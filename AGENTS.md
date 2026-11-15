@@ -34,7 +34,7 @@ InfraPulse is an API Reliability & Observability Platform.
 - Run tests and linters before proposing a commit.
 - Never push without explicit approval.
 - Never rewrite Git history without approval.
-- Never disable Entire hooks or alter checkpoints.
+- Preserve shared Git hooks, history, and private backups.
 - Keep generated artifacts and secrets out of Git.
 
 ## AI Agent Requirements
@@ -65,8 +65,3 @@ After implementation:
 - Terraform provisioning
 - Authentication and authorization
 - External notification integrations
-
-<!-- entire-agent:begin -->
-Read .entire/agent-guide.md for this repository's workflow, source inspection, and verification guidance.
-@.entire/agent-guide.md
-<!-- entire-agent:end -->

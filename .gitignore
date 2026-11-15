@@ -20,7 +20,7 @@ build/
 .vscode/
 
 # Entire local runtime logs
-.entire/logs/
+.entire/
 
 # Reproducible frontend contracts and local test evidence
 frontend/src/shared/api/generated.d.ts
