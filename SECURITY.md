@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report suspected vulnerabilities privately before opening a public issue or pull request. After this repository becomes public, GitHub Private Vulnerability Reporting will be enabled if available. Use the **Report a vulnerability** option on the repository's GitHub Security page only when it is visible. Until then, no private reporting channel is confirmed; request one from the maintainer without disclosing vulnerability details publicly.
+Report suspected vulnerabilities through GitHub Private Vulnerability Reporting. Open this repository's **Security** tab, select **Advisories**, and choose **Report a vulnerability**. Do not disclose vulnerability details in a public issue or pull request.
 
 Include the affected component, steps to reproduce, potential impact, and any relevant evidence. Do not include credentials or other people's private data. No response time or support period is promised here.
 
