@@ -57,20 +57,50 @@ flowchart LR
 
 Traces are best effort. The default Alertmanager receiver is local, with no external notification integration. See [ADR 0002](adr/0002-observability-architecture.md) and the [operations guide](operations/observability.md).
 
-## CI/CD
+## DevSecOps CI and Software Supply Chain
 
 ```mermaid
 flowchart LR
-    Change[Push or pull request] --> Quality[Quality, tests, and API contract]
-    Change --> Integration[PostgreSQL, frontend, and observability tests]
-    Change --> Security[security-foundations]
-    Change --> Images[Image build and validation]
-    Quality --> Required[ci-required]
+    Source["Source: push or pull request"]
+    Contract["api-contract"]
+    Quality["backend-quality and backend-unit"]
+    FrontendContract["frontend-quality and frontend-build"]
+    FrontendTests["frontend-tests"]
+    Integration["backend-postgres, playwright-e2e, and observability-integration"]
+    Security["security-foundations: supply chain, secrets, and OCI regressions"]
+    Images["docker-build: build, inspect, and smoke images"]
+    Required["ci-required: blocking aggregate"]
+    Audit["vulnerability-audit: informational"]
+    Evidence["ci-evidence: SBOM and unsigned provenance on push"]
+    Dispatch["Manual dispatch on main"]
+    Historical["Pinned historical run artifacts and validator commits"]
+    Verify["F3C.3.2: evidence and Cosign verification"]
+    Planned["Production deployment / CD: Planned"]
+
+    Source --> Contract
+    Source --> Quality
+    Source --> FrontendTests
+    Source --> Integration
+    Source --> Security
+    Contract --> FrontendContract
+    Contract --> Images
+    Quality --> Required
+    Contract --> Required
+    FrontendContract --> Required
+    FrontendTests --> Required
     Integration --> Required
     Security --> Required
     Images --> Required
-    Images --> Audit[informational vulnerability-audit]
-    Images --> Evidence[unsigned ci-evidence]
+    Images --> Audit
+    Images --> Evidence
+    Dispatch --> Verify
+    Historical --> Verify
+
+    style Planned fill:#fff3cd,stroke:#b7791f,stroke-width:3px,color:#332000
 ```
 
-The diagram summarizes dependencies in the [CI workflow](../.github/workflows/ci.yml): `ci-required` aggregates its dependent jobs, while vulnerability auditing and evidence generation have separate results. It does not represent deployment or publication. Provenance and coverage limits are described in the [provenance guide](provenance-f3b1.md) and [CI evidence guide](ci-evidence-f3c2.md).
+**Legend:** Solid arrows show workflow triggers, declared job dependencies, or the pinned inputs to isolated verification; arrows into `ci-required` show its blocking `needs` aggregate. `vulnerability-audit` is informational and outside that aggregate. `ci-evidence` generates and validates unsigned SBOM/provenance evidence only after a successful image build on branch pushes; it is also outside the aggregate. The separately dispatched F3C.3.2 workflow verifies pinned historical artifacts and Cosign signatures, without depending on the current CI run. Production deployment/CD is planned and is not connected to an implemented pipeline.
+
+Workflows: [CI](../.github/workflows/ci.yml) and [F3C.3.2 isolated real validation](../.github/workflows/f3c3-real-validation.yml).
+
+Provenance and coverage limits are described in the [provenance guide](provenance-f3b1.md) and [CI evidence guide](ci-evidence-f3c2.md).
