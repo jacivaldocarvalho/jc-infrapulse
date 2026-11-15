@@ -368,6 +368,56 @@ IMAGE_IDS = {name: fixture[0] for name, fixture in DOCKER_FIXTURES.items()}
 
 
 class EvidenceSignatureTests(unittest.TestCase):
+    def test_sign_and_verify_pass_fixed_image_names_and_independent_ids(self) -> None:
+        with (
+            self.signing_mocks(),
+            patch.object(signature, "_validate_provenance") as validate,
+        ):
+            evidence_signature.sign_evidence(*self.arguments())
+            calls = validate.call_args_list
+        self.assertEqual(
+            [(call.args[4], call.args[5]) for call in calls],
+            [
+                (None, None),
+                (None, None),
+                (IMAGE_IDS["backend-image"], "backend-image"),
+                (IMAGE_IDS["nginx-image"], "nginx-image"),
+            ],
+        )
+        with (
+            patch.object(
+                vulnerability_ci, "identity", side_effect=self.handoff_identity
+            ),
+            patch.object(signature, "verify_blob_bytes", side_effect=self.fake_verify),
+            patch.object(
+                signature, "verify_signature", side_effect=self.fake_statement_verify
+            ) as verify,
+        ):
+            evidence_signature.verify_evidence(
+                self.evidence,
+                self.handoff,
+                self.bundles,
+                self.cosign,
+                self.trivy,
+                self.policy,
+                self.policy_hash,
+                self.key_id,
+                COMMIT,
+                RUN_ID,
+                ATTEMPT,
+                REPOSITORY,
+                IMAGE_IDS,
+            )
+            self.assertEqual(
+                [(call.args[9], call.args[10]) for call in verify.call_args_list],
+                [
+                    (None, None),
+                    (None, None),
+                    (IMAGE_IDS["backend-image"], "backend-image"),
+                    (IMAGE_IDS["nginx-image"], "nginx-image"),
+                ],
+            )
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

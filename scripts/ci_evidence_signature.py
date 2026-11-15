@@ -2116,6 +2116,7 @@ def sign_evidence(
                     snapshot_paths[f"{name}.manifest.json"],
                     trivy,
                     image_id,
+                    name if name in {"backend-image", "nginx-image"} else None,
                 )
             bundles: dict[str, bytes] = {}
             bundle_manifest = Path(bundle_root) / "evidence-manifest.sigstore.json"
@@ -2301,6 +2302,7 @@ def verify_evidence_with_sboms(
                 snapshot_paths[f"{name}.manifest.json"],
                 trivy,
                 expected_image_ids.get(name) if name.endswith("-image") else None,
+                name if name in {"backend-image", "nginx-image"} else None,
             )
     verification = {
         "status": "VERIFIED",

@@ -349,6 +349,9 @@ def verify_image(
     if identity.get("image_id") != expected_id:
         raise ValueError("Expected local image unavailable")
     original = normalized_inventory(doc, expected_id, image_name, "ci-evidence-sbom")
+    root_purl = doc["metadata"]["component"]["purl"]
+    if root_purl.split("@", 1)[0] != f"pkg:oci/{image_name}":
+        raise ValueError("Logical image name differs from SBOM root")
     with tempfile.TemporaryDirectory(prefix="infrapulse-verify-image-") as directory:
         generated = Path(directory) / "fresh.json"
         report = sbom.generate_image(

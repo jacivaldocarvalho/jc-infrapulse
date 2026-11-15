@@ -276,9 +276,22 @@ def _validate_provenance(
     manifest_path: Path,
     trivy_path: Path,
     expected_image_id: str | None,
+    expected_image_name: str | None = None,
 ) -> bytes:
+    if expected_image_id is not None:
+        if expected_image_name not in {"backend-image", "nginx-image"}:
+            raise ValueError("A trusted logical image name is required")
+    elif expected_image_name is not None:
+        raise ValueError("Logical image name requires an independent image ID")
     raw, document = _json_file(statement_path, MAX_STATEMENT_BYTES)
-    provenance.verify(document, sbom_path, manifest_path, trivy_path, expected_image_id)
+    provenance.verify(
+        document,
+        sbom_path,
+        manifest_path,
+        trivy_path,
+        expected_image_id,
+        expected_image_name,
+    )
     return raw
 
 
@@ -291,11 +304,17 @@ def sign_statement(
     manifest_path: Path,
     trivy_path: Path,
     expected_image_id: str | None = None,
+    expected_image_name: str | None = None,
 ) -> None:
     """Sign exact statement bytes after F3B.1 integrity validation."""
     verify_cosign(cosign)
     statement_bytes = _validate_provenance(
-        statement_path, sbom_path, manifest_path, trivy_path, expected_image_id
+        statement_path,
+        sbom_path,
+        manifest_path,
+        trivy_path,
+        expected_image_id,
+        expected_image_name,
     )
     inputs = [statement_path, private_key, cosign, sbom_path, manifest_path, trivy_path]
     sbom.check_output(bundle_path, inputs)
@@ -374,11 +393,17 @@ def verify_signature(
     manifest_path: Path,
     trivy_path: Path,
     expected_image_id: str | None = None,
+    expected_image_name: str | None = None,
 ) -> dict[str, str]:
     """Verify integrity, then the signature against independently pinned policy."""
     verify_cosign(cosign)
     statement_bytes = _validate_provenance(
-        statement_path, sbom_path, manifest_path, trivy_path, expected_image_id
+        statement_path,
+        sbom_path,
+        manifest_path,
+        trivy_path,
+        expected_image_id,
+        expected_image_name,
     )
     bundle_bytes, bundle = _json_file(bundle_path, MAX_BUNDLE_BYTES)
     if not bundle:
@@ -427,6 +452,9 @@ def main() -> int:
         command.add_argument("--trivy", type=Path, required=True)
         command.add_argument("--cosign", type=Path, required=True)
         command.add_argument("--expected-image-id")
+        command.add_argument(
+            "--expected-image-name", choices=("backend-image", "nginx-image")
+        )
         if action == "sign":
             command.add_argument("--private-key", type=Path, required=True)
             command.add_argument("--bundle", type=Path, required=True)
@@ -447,6 +475,7 @@ def main() -> int:
                 args.manifest,
                 args.trivy,
                 args.expected_image_id,
+                args.expected_image_name,
             )
             result = {"status": "SIGNED", "integrity": "INTEGRITY_VERIFIED"}
         else:
@@ -461,6 +490,7 @@ def main() -> int:
                 args.manifest,
                 args.trivy,
                 args.expected_image_id,
+                args.expected_image_name,
             )
     except (
         OSError,
