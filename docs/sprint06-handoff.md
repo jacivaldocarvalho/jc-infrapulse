@@ -6,7 +6,7 @@
 - F3C.4.2B–D estão concluídas. O contrato v1 e os testes negativos mantêm `COVERAGE_PARTIAL` e rejeitam `COMPLETE` sem prova independente.
 - Nesta retomada, o leitor passou a aceitar os cabeçalhos GNU e PAX local `path`/`linkpath` observados nos archives reais, com limites de 128 MiB por camada, 256 MiB agregados, 1 MiB por cabeçalho PAX e 100.000 entradas. Gzip, PAX global e extensões não observadas continuam rejeitados.
 - Os dois archives preservados do run `41238810850` foram verificados pelos hashes do handoff, IDs dos configs e DiffIDs; o parser leu todas as 24 camadas. Detalhes e limites em [integração F3C.3.2](sprint06-f3c3-reconciliation.md).
-- A integração direta do verificador F3C.3.2 com a reconciliação está implementada e validada localmente nesta branch isolada, mas ainda não foi integrada ao GitHub nem executada no CI remoto. O pacote histórico não preservou os bundles Cosign descartáveis; o CI atual testa assinaturas reais com fixture descartável.
+- A integração direta do verificador F3C.3.2 com a reconciliação está no [PR #15](https://github.com/jacivaldocarvalho/jc-infrapulse/pull/15); o CI do PR [43655776080](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/43655776080) passou, e falta o merge em `develop`. O pacote histórico não preservou os bundles Cosign descartáveis; o CI testa assinaturas reais com fixture descartável.
 - Retenção atual: handoff de imagens 1 dia, relatórios sanitizados 7 dias e evidência CI sem assinatura 30 dias. Os bundles temporários F3C.3.2 não são publicados.
 
 **Registro em 2026-11-01, UTC.** Reconfirmar referências e retenção na retomada; os estados remotos podem mudar.
@@ -27,7 +27,7 @@
 | F3C.4.2A | Concluída: leitor virtual USTAR/GNU e PAX restrito; limites ampliados validados com as imagens preservadas e regressões negativas no job obrigatório. |
 | F3C.4.2B–D | Concluídas pelos PRs #11–#13 em 2026-11-14; CI pós-merge dos três PRs passou. |
 | F3C.4.3 | Contrato v1 e gates negativos integrados; cobertura permanece `COVERAGE_PARTIAL`. |
-| F3C.4.4 | PR #14 integrou verificação de manifesto/SBOM assinados à reconciliação. A ligação direta aos bundles completos F3C.3.2 está em validação isolada nesta retomada. |
+| F3C.4.4 | PR #14 integrou verificação de manifesto/SBOM assinados à reconciliação. A ligação aos bundles F3C.3.2 está no PR #15, com CI aprovado; aguarda merge. |
 
 ## Arquitetura e decisões de segurança
 
