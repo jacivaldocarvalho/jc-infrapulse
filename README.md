@@ -8,6 +8,14 @@
 
 InfraPulse is an API reliability and observability platform. It registers HTTP services, checks them through a dedicated worker, stores results in PostgreSQL, and exposes status, history, and reliability metrics through a FastAPI API and a React dashboard. The repository also includes local observability infrastructure and CI validation for application code, images, and evidence artifacts.
 
+## Project status
+
+| Status | Scope |
+| --- | --- |
+| **Implemented** | Service registration, scheduled HTTP checks, persisted history, reliability views, React dashboard, local observability stack, and CI checks for code, integration, images, and evidence. |
+| **In progress** | Public-facing documentation is being refined; no active deployment milestone is documented. |
+| **Planned** | The roadmap below identifies work needed before a production deployment. |
+
 ## What it does
 
 - **Service registry:** create, list, update, and delete monitored HTTP services through `/api/v1/services`.
@@ -47,6 +55,18 @@ The API handles requests and persistence; the worker performs checks independent
 | Dashboard | React, TypeScript, Vite, Nginx |
 | Observability | Prometheus, OpenTelemetry Collector, Tempo, Grafana, Alertmanager |
 | Development and quality | Docker Compose, pytest, httpx, Ruff, mypy, frontend test tooling |
+
+## Engineering practices
+
+| Discipline | Evidence in this repository |
+| --- | --- |
+| DevOps | Docker Compose defines the local stack; GitHub Actions validates code, integration, and container images without deploying them. |
+| DevSecOps | Monitoring enforces URL and resolved-address controls; CI validates image builds and generates SBOM and provenance evidence, with a separate informational vulnerability audit. |
+| SRE | Health and readiness endpoints, persisted check history, Prometheus metrics, OpenTelemetry traces, and local dashboards support diagnosis. No SLO is defined. |
+| Backend | FastAPI separates API requests from the monitoring worker; SQLAlchemy, Alembic, pytest, Ruff, and mypy support persistence and code quality. |
+| Frontend | React and TypeScript provide the dashboard; CI generates API types from the OpenAPI contract and runs frontend quality, unit, build, and browser checks. |
+
+The [architecture](docs/architecture.md) and [CI workflow](.github/workflows/ci.yml) describe these boundaries in detail.
 
 ## Run locally
 
@@ -88,6 +108,23 @@ The [CI workflow](.github/workflows/ci.yml) includes additional integration and 
 ## Scope and limitations
 
 The Compose configuration is intended for local development, not a hardened public deployment. Authentication and authorization are not implemented. The worker is designed for a single replica. PostgreSQL check history has no automatic retention policy. Alertmanager has no external notification integration by default. Health endpoints, metrics, and dashboards should be exposed only behind controls appropriate to the deployment.
+
+## Production readiness
+
+**Implemented:** health and readiness checks, monitoring history, telemetry, and CI validation provide a foundation for operating and reviewing the application.
+
+No production environment, continuous deployment pipeline, or production readiness sign-off is documented here.
+
+**Planned:** address the deployment, access control, retention, notification, and worker scaling gaps described above before treating the service as production ready.
+
+## Roadmap
+
+The following items are **planned**, not delivered commitments:
+
+- **Observability and reliability:** define service objectives and alerting policies, then evaluate retention and recovery requirements.
+- **Deployment automation:** design a controlled deployment pipeline with verification and rollback steps.
+- **Security:** add authentication and authorization, review public exposure, and define an operational vulnerability response process.
+- **Future deployment:** assess an appropriate hosting model and infrastructure automation after production requirements are defined; no Kubernetes deployment is currently provided.
 
 ## Documentation
 
