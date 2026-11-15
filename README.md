@@ -5,6 +5,9 @@ API Reliability & Observability Platform
 Projeto de engenharia de software para monitoramento
 de APIs, métricas de confiabilidade e incidentes.
 
+Consulte a [arquitetura](docs/architecture.md) para os fluxos do produto,
+observabilidade e CI.
+
 ## Tecnologias
 - Python / FastAPI
 - PostgreSQL
@@ -214,7 +217,7 @@ Para executar checks internos, `SERVICE_INTERNAL_HOSTS` sozinho não basta: tamb
 configure `MONITORING_INTERNAL_NETWORKS` com as redes privadas explicitamente
 autorizadas. Loopback, link-local e metadata continuam bloqueados. A política é
 reavaliada a cada tentativa, inclusive para serviços cadastrados anteriormente.
-Veja o [modelo de ameaças e operação do monitoramento](docs/monitoring.md).
+Veja o [modelo de ameaças e operação do monitoramento](docs/operations/monitoring.md).
 
 ## HTTP Monitoring — Sprint 03
 
@@ -236,7 +239,7 @@ réplicas exigirão coordenação distribuída. A API não inicia tarefas perió
 Excluir um serviço remove seu histórico em cascata. Não há retenção automática.
 
 Configuração, semântica dos estados, recuperação após reinício e encerramento:
-[documentação operacional](docs/monitoring.md).
+[documentação operacional](docs/operations/monitoring.md).
 Decisões: [ADR do monitoramento](docs/adr/0001-http-monitoring.md).
 
 ### Testes com PostgreSQL 17 isolado
@@ -306,9 +309,9 @@ Para validar a stack real e PostgreSQL 17 em projetos descartáveis:
 bash scripts/validate-observability.sh
 ```
 
-Veja [operação, métricas, alertas, retenção e troubleshooting](docs/observability.md),
+Veja [operação, métricas, alertas, retenção e troubleshooting](docs/operations/observability.md),
 [ADR 0002](docs/adr/0002-observability-architecture.md) e
-[relatório de validação](docs/sprint04-report.md).
+[relatório de validação](docs/history/sprints/sprint04-report.md).
 
 ## Frontend Dashboard — Sprint 05
 
@@ -348,6 +351,6 @@ O E2E usa uma porta dinâmica em loopback, não utiliza `backend/.env` e remove 
 stack ao terminar. Totais globais de inventário são separados de UP/DOWN/sem dados
 da página visível. Métricas históricas usam janelas fixas e não fazem polling.
 
-Veja [operação e limites do dashboard](docs/frontend.md),
+Veja [operação e limites do dashboard](docs/operations/frontend.md),
 [ADR 0003](docs/adr/0003-frontend-dashboard.md) e
-[relatório da sprint](docs/sprint05-report.md).
+[relatório da sprint](docs/history/sprints/sprint05-report.md).

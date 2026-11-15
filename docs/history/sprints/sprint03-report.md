@@ -111,8 +111,8 @@ sucesso; o `pip check` final passou. Não há falha de validação pendente.
 
 ## Decisões e limites
 
-Decisões completas: [ADR 0001](adr/0001-http-monitoring.md).
-Operação e ameaças: [monitoring.md](monitoring.md).
+Decisões completas: [ADR 0001](../../adr/0001-http-monitoring.md).
+Operação e ameaças: [monitoring.md](../../operations/monitoring.md).
 
 - Uma única réplica do worker; múltiplas réplicas precisam de coordenação distribuída.
 - Sem fila durável de resultados ou garantia de exactly-once. Tentativas sem commit

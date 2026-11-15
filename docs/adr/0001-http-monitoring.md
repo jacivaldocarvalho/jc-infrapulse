@@ -43,4 +43,4 @@ Controles SSRF da aplicação devem ser reforçados por egress de infraestrutura
 roteamento especial e intermediários públicos ficam fora da garantia do socket.
 
 Detalhes operacionais, classificação dos estados e ameaças estão em
-[monitoring.md](../monitoring.md).
+[monitoring.md](../operations/monitoring.md).

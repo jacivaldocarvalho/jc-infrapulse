@@ -57,4 +57,4 @@ aproximações por buckets; não são o percentile_cont do histórico PostgreSQL
 Uma instância do worker e um processo por registry continuam sendo limites. A
 stack local não é HA, não inclui retenção automática no PostgreSQL nem logs
 centralizados. Alertmanager recebe/deduplica alertas, mas o receiver padrão não
-notifica pessoas. Detalhes em [observability.md](../observability.md).
+notifica pessoas. Detalhes em [observability.md](../operations/observability.md).

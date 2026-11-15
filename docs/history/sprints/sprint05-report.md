@@ -105,11 +105,11 @@ O build local produziu aproximadamente 123 kB gzip para o chunk principal e
 
 Capturas locais, ignoradas pelo Git:
 
-- [Dashboard claro](../frontend/test-results/dashboard-visible-scope-fi-07b8a-ion-and-stale-update-errors/dashboard-light.png)
-- [Dashboard escuro](../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-dark.png)
-- [Dashboard móvel](../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-mobile.png)
-- [Histórico e gráficos](../frontend/test-results/dashboard-historical-metri-d9a79-hart-windows-and-pagination/historical-charts.png)
-- [Check UP real do worker](../frontend/test-results/dashboard-real-CRUD-throug-76d3a--and-an-actual-worker-check/real-worker-up.png)
+- [Dashboard claro](../../../frontend/test-results/dashboard-visible-scope-fi-07b8a-ion-and-stale-update-errors/dashboard-light.png)
+- [Dashboard escuro](../../../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-dark.png)
+- [Dashboard móvel](../../../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-mobile.png)
+- [Histórico e gráficos](../../../frontend/test-results/dashboard-historical-metri-d9a79-hart-windows-and-pagination/historical-charts.png)
+- [Check UP real do worker](../../../frontend/test-results/dashboard-real-CRUD-throug-76d3a--and-an-actual-worker-check/real-worker-up.png)
 
 Relatório Playwright: `frontend/playwright-report/index.html`.
 Logs detalhados da sessão, fora do Git:
@@ -172,8 +172,8 @@ Limitações mantidas e documentadas:
 
 ## Reprodução e Conventional Commit — Fase 4
 
-Instruções completas em [frontend.md](frontend.md) e decisões no
-[ADR 0003](adr/0003-frontend-dashboard.md).
+Instruções completas em [frontend.md](../../operations/frontend.md) e decisões no
+[ADR 0003](../../adr/0003-frontend-dashboard.md).
 
 ```bash
 npm --prefix frontend ci
