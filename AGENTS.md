@@ -34,7 +34,7 @@ InfraPulse is an API Reliability & Observability Platform.
 - Run tests and linters before proposing a commit.
 - Never push without explicit approval.
 - Never rewrite Git history without approval.
-- Never disable Entire hooks or alter checkpoints.
+- Preserve shared Git hooks, history, and private backups.
 - Keep generated artifacts and secrets out of Git.
 
 ## AI Agent Requirements

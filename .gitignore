@@ -6,6 +6,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+*.egg-info/
 .venv/
 .coverage
 htmlcov/
@@ -16,3 +18,13 @@ build/
 
 .idea/
 .vscode/
+
+# Entire local runtime logs
+.entire/
+
+# Reproducible frontend contracts and local test evidence
+frontend/src/shared/api/generated.d.ts
+frontend/test-results/
+frontend/playwright-report/
+frontend/coverage/
+/articles/

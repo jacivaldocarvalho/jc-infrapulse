@@ -1,0 +1,76 @@
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+body {
+  margin: 0;
+}
+[data-mantine-color-scheme='light'] body {
+  background: #f5f7f9;
+}
+[data-mantine-color-scheme='dark'] body {
+  background: #10151b;
+}
+.mantine-AppShell-header,
+.mantine-AppShell-navbar {
+  background: var(--mantine-color-body);
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 36px;
+  border-radius: 9px;
+  color: white;
+  background: #087f5b;
+  font-size: 30px;
+  font-weight: 700;
+}
+.brand-dot {
+  color: var(--mantine-color-teal-7);
+}
+.sidebar-note {
+  margin-top: auto;
+  padding: 18px 8px;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+main {
+  scroll-margin-top: 96px;
+  max-width: 1420px;
+  margin: 0 auto;
+}
+:focus-visible {
+  outline: 3px solid var(--mantine-color-teal-text);
+  outline-offset: 3px;
+}
+.skip-link {
+  position: absolute;
+  top: -200px;
+  padding: 12px;
+  background: var(--mantine-color-body);
+  z-index: 1000;
+}
+.skip-link:focus {
+  top: 80px;
+}
+.metric-value {
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+}
+.service-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.service-link:hover {
+  text-decoration: underline;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.chart-container {
+  min-width: 0;
+}

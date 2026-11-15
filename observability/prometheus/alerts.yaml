@@ -1,0 +1,80 @@
+groups:
+  - name: infrapulse
+    rules:
+      - alert: InfraPulseAPIDown
+        expr: "up{job=\"infrapulse-api\"} == 0"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API metrics target unavailable"
+      - alert: InfraPulseWorkerDown
+        expr: "up{job=\"infrapulse-worker\"} == 0"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker metrics target unavailable"
+      - alert: InfraPulseAPINoData
+        expr: "absent_over_time(up{job=\"infrapulse-api\"}[5m])"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API target data absent"
+      - alert: InfraPulseWorkerNoData
+        expr: "absent_over_time(up{job=\"infrapulse-worker\"}[5m])"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker target data absent"
+      - alert: InfraPulseEventLoopStalled
+        expr: "(time() - infrapulse_event_loop_last_tick_timestamp_seconds > 60) and (time() - infrapulse_process_start_timestamp_seconds > 120) and (up == 1)"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Event loop heartbeat stale despite available exporter"
+      - alert: InfraPulseSchedulerStalled
+        expr: "(time() - infrapulse_scheduler_last_healthy_cycle_timestamp_seconds{job=\"infrapulse-worker\"} > 120) and (time() - infrapulse_process_start_timestamp_seconds > 120) and (up == 1)"
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No healthy scheduling cycle"
+      - alert: InfraPulseNoSuccessfulChecks
+        expr: "(infrapulse_active_services{job=\"infrapulse-worker\"} > 0) and (time() - infrapulse_last_up_check_timestamp_seconds > 600) and (sum by(job,instance)(increase(infrapulse_checks_total[10m])) > 0) and (time() - infrapulse_process_start_timestamp_seconds > 600) and (up == 1)"
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Active checks have no recent persisted UP; inspect destination and persistence errors"
+      - alert: InfraPulseAPIHighErrorRate
+        expr: "(sum(rate(http_server_requests_total{job=\"infrapulse-api\",status_code=~\"5..\"}[5m])) / sum(rate(http_server_requests_total{job=\"infrapulse-api\"}[5m])) > 0.05) and (sum(increase(http_server_requests_total{job=\"infrapulse-api\"}[5m])) >= 100)"
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx ratio exceeds 5 percent with sufficient traffic"
+      - alert: InfraPulseAPIHighLatency
+        expr: "(histogram_quantile(0.95, sum by(le)(rate(http_server_request_duration_seconds_bucket{job=\"infrapulse-api\"}[5m]))) > 1) and (sum(increase(http_server_requests_total{job=\"infrapulse-api\"}[5m])) >= 100)"
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 exceeds one second with sufficient traffic"
+      - alert: InfraPulseSchedulerErrors
+        expr: "sum by(job,instance)(increase(infrapulse_scheduler_errors_total{job=\"infrapulse-worker\"}[5m])) > 0"
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Internal scheduler error"
+      - alert: InfraPulseWorkerSaturated
+        expr: "(infrapulse_checks_in_flight{job=\"infrapulse-worker\"} / infrapulse_worker_capacity > 0.9) and (up == 1)"
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker capacity above 90 percent"

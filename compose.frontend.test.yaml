@@ -1,0 +1,68 @@
+# Standalone disposable stack; no development environment or volumes are reused.
+services:
+  test-db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: infrapulse_test
+      POSTGRES_USER: infrapulse_test
+      POSTGRES_PASSWORD: ${INFRAPULSE_TEST_PASSWORD:?Ephemeral test password required}
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U infrapulse_test -d infrapulse_test]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [data]
+  api:
+    build: ./backend
+    environment: &backend-env
+      POSTGRES_HOST: test-db
+      POSTGRES_DB: infrapulse_test
+      POSTGRES_USER: infrapulse_test
+      POSTGRES_PASSWORD: ${INFRAPULSE_TEST_PASSWORD:?Ephemeral test password required}
+      SERVICE_INTERNAL_HOSTS: '["monitoring-target"]'
+      MONITORING_INTERNAL_NETWORKS: ${INFRAPULSE_TEST_NETWORKS:-[]}
+      MONITORING_ALLOWED_PORTS: '[8081]'
+      MONITORING_POLL_SECONDS: '1'
+      INFRAPULSE_FRONTEND_E2E: '1'
+    depends_on:
+      test-db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready', timeout=8)"]
+      interval: 2s
+      timeout: 10s
+      retries: 30
+    networks: [data, api_access]
+  worker:
+    build: ./backend
+    environment: *backend-env
+    command: [python, -m, app.worker]
+    depends_on:
+      test-db:
+        condition: service_healthy
+    networks: [data, targets]
+  monitoring-target:
+    image: python:3.12-slim
+    command: [python, -m, http.server, '8081']
+    working_dir: /tmp
+    networks: [targets]
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports: ['127.0.0.1::8080']
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [api_access]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+networks:
+  data:
+    internal: true
+  api_access:
+    driver: bridge
+  targets:
+    internal: true

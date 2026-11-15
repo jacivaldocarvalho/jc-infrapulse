@@ -1,0 +1,5 @@
+# Isolated SBOM validation environment, Python 3.12 / Linux x86_64.
+# Wheel SHA-256 values from PyPI release metadata; not application dependencies.
+jsonschema==4.10.3 --hash=sha256:443442f9ac2fdfde7bc99079f0ba08e5d167fc67749e9fc706a393bc8857ca48
+attrs==23.2.0 --hash=sha256:99b87a485a5820b23b879f04c2305b44b951b502fd64be915879d77a7e8fc6f1
+pyrsistent==0.20.0 --hash=sha256:b14decb628fac50db5e02ee5a35a9c0772d20277824cfe845c8a8b717c15daa3 --hash=sha256:c55acc4733aad6560a7f5f818466631f07efc001fd023f34a6c203f8b6df0f0b

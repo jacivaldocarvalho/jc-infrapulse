@@ -1,0 +1,10 @@
+groups:
+  - name: integration-only
+    rules:
+      - alert: InfraPulseIntegrationProbe
+        expr: vector(1)
+        for: 0s
+        labels:
+          severity: info
+        annotations:
+          summary: Local integration delivery probe; no external receiver

@@ -1,0 +1,55 @@
+# Merge with compose.yaml using a distinct project; never reuses development volumes.
+services:
+  frontend:
+    ports: !reset []
+    profiles: [frontend]
+  db:
+    volumes: !reset []
+    tmpfs: [/var/lib/postgresql/data]
+  api:
+    env_file: !reset []
+    ports: !reset []
+    environment:
+      POSTGRES_DB: infrapulse
+      POSTGRES_USER: infrapulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Ephemeral password required}
+      TELEMETRY_SAMPLE_RATIO: "1"
+      SERVICE_INTERNAL_HOSTS: '["monitoring-target"]'
+    networks: !override [internal, telemetry]
+  worker:
+    env_file: !reset []
+    environment:
+      POSTGRES_DB: infrapulse
+      POSTGRES_USER: infrapulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Ephemeral password required}
+      TELEMETRY_SAMPLE_RATIO: "1"
+      MONITORING_POLL_SECONDS: "1"
+      SERVICE_INTERNAL_HOSTS: '["monitoring-target"]'
+      MONITORING_INTERNAL_NETWORKS: ${INFRAPULSE_TEST_NETWORKS:-[]}
+      MONITORING_ALLOWED_PORTS: '[8080]'
+    networks: !override [internal, telemetry]
+  grafana:
+    ports: !reset []
+    networks: !override [telemetry]
+  prometheus:
+    volumes:
+      - ./observability/tests/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./observability/tests/alerts.yaml:/etc/prometheus/test-alerts.yaml:ro
+      - ./observability/tests/rules.test.yaml:/tests/rules.test.yaml:ro
+  monitoring-target:
+    build:
+      context: ./backend
+      target: test
+    command: ["python", "-m", "http.server", "8080"]
+    networks: [telemetry]
+    mem_limit: 128m
+  observability-tests:
+    build:
+      context: ./backend
+      target: test
+    command: ["pytest", "-q", "-s", "tests/test_observability_stack.py", "-o", "cache_dir=/tmp/pytest_cache"]
+    environment:
+      INFRAPULSE_OBSERVABILITY_INTEGRATION: "1"
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Ephemeral password required}
+    networks: [telemetry]
+    profiles: [test]

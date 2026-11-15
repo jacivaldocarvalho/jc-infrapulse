@@ -1,0 +1,765 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: backend
+
+jobs:
+  backend-quality:
+    name: backend-quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements*.lock
+      - name: Install locked backend and development dependencies
+        run: bash install-locked.sh dev --editable
+      - name: Lint backend
+        run: ruff check .
+      - name: Check backend formatting
+        run: ruff format --check .
+      - name: Type check backend
+        run: mypy
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Lint root Python scripts with existing root defaults
+        working-directory: .
+        run: ruff check scripts
+      - name: Check root Python scripts formatting
+        working-directory: .
+        run: ruff format --check scripts
+
+  backend-unit:
+    name: backend-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # registry_engine must use SQLite; never activate external integration fixtures.
+      INFRAPULSE_RUN_INTEGRATION: '0'
+      INFRAPULSE_OBSERVABILITY_INTEGRATION: '0'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements*.lock
+      - name: Install locked backend and development dependencies
+        run: bash install-locked.sh dev --editable
+      - name: Run explicitly selected tests without external services
+        # Keep this allowlist in sync with the test inventory in the phase B report.
+        # Direct invocation preserves all pytest exit codes, including 5 (no tests).
+        run: |
+          python -m pytest -v -ra --strict-markers -m 'not integration' \
+            tests/test_health.py \
+            tests/test_services.py \
+            tests/test_url_policy.py \
+            tests/test_checker.py \
+            tests/test_transport.py \
+            tests/test_scheduler.py \
+            tests/test_monitoring_api.py \
+            tests/test_observability.py \
+            --junitxml=test-results/backend-unit.xml
+      - name: Upload unit test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-unit-junit
+          path: backend/test-results/backend-unit.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  api-contract:
+    name: api-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements*.lock
+      - name: Install locked backend dependencies
+        run: bash install-locked.sh runtime --editable
+      - name: Export and validate the current OpenAPI contract
+        working-directory: .
+        env:
+          OPENAPI_SCHEMA_FILE: ${{ runner.temp }}/api-contract/openapi.json
+        run: |
+          mkdir -p "$(dirname "$OPENAPI_SCHEMA_FILE")"
+          python -B scripts/export-openapi.py > "$OPENAPI_SCHEMA_FILE"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from fastapi.openapi.models import OpenAPI
+
+          schema = OpenAPI.model_validate_json(
+              Path(os.environ['OPENAPI_SCHEMA_FILE']).read_text()
+          )
+          if (
+              not schema.openapi.startswith('3.')
+              or not schema.paths
+              or not schema.components
+              or not schema.components.schemas
+          ):
+              raise ValueError('Expected a nonempty OpenAPI 3 contract with component schemas')
+          print(f'Validated OpenAPI {schema.openapi}: {len(schema.paths)} paths')
+          PY
+      - name: Upload the contract for this workflow run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract/openapi.json
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend-quality:
+    name: frontend-quality
+    needs: [api-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Download the contract from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract
+      - name: Generate API types from the shared contract
+        env:
+          OPENAPI_SCHEMA_FILE: ${{ runner.temp }}/api-contract/openapi.json
+        run: npm run generate:api
+      - name: Type check frontend
+        run: npm run typecheck
+      - name: Lint frontend with zero warnings
+        run: npm run lint -- --max-warnings=0
+      - name: Check frontend formatting
+        run: npm run format:check
+
+  frontend-tests:
+    name: frontend-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Run frontend tests including deletion regressions
+        run: npm test -- --reporter=default --reporter=junit --outputFile=test-results/frontend-unit.xml
+      - name: Upload frontend test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-unit-junit
+          path: frontend/test-results/frontend-unit.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  frontend-build:
+    name: frontend-build
+    needs: [api-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Download the contract from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract
+      - name: Build production frontend from the shared contract
+        # The existing build script generates types and runs typecheck before Vite.
+        env:
+          OPENAPI_SCHEMA_FILE: ${{ runner.temp }}/api-contract/openapi.json
+        run: npm run build
+      - name: Verify production output
+        run: |
+          test -s dist/index.html
+          test -n "$(find dist/assets -type f -name '*.js' -size +0c -print -quit)"
+          test -n "$(find dist/assets -type f -name '*.css' -size +0c -print -quit)"
+
+  backend-postgres:
+    name: backend-postgres
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: .
+    env:
+      POSTGRES_TEST_PROJECT: infrapulse-ci-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Reserve a new isolated Compose project
+        id: postgres-isolation
+        run: |
+          [[ "$POSTGRES_TEST_PROJECT" =~ ^infrapulse-ci-postgres-[0-9]+-[0-9]+$ ]]
+          project_containers=$(docker ps -aq --filter "label=com.docker.compose.project=$POSTGRES_TEST_PROJECT")
+          project_networks=$(docker network ls -q --filter "label=com.docker.compose.project=$POSTGRES_TEST_PROJECT")
+          project_volumes=$(docker volume ls -q --filter "label=com.docker.compose.project=$POSTGRES_TEST_PROJECT")
+          test -z "$project_containers"
+          test -z "$project_networks"
+          test -z "$project_volumes"
+          test_password=$(openssl rand -hex 32)
+          printf '::add-mask::%s\n' "$test_password"
+          printf 'INFRAPULSE_TEST_PASSWORD=%s\n' "$test_password" >> "$GITHUB_ENV"
+          # Enable cleanup only after proving this project was absent.
+          printf 'ready=true\n' >> "$GITHUB_OUTPUT"
+      - name: Validate the standalone test Compose
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" config --quiet
+      - name: Build the existing backend test image
+        timeout-minutes: 15
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" build tests
+      - name: Run the serial PostgreSQL suite and real worker
+        timeout-minutes: 5
+        # The existing image runs pytest serially; Compose propagates its exit code.
+        # PostgreSQL fixtures verify major 17 and all Alembic migration cycles.
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" up --abort-on-container-exit --exit-code-from tests
+      - name: Clean up only the reserved disposable project
+        if: ${{ always() && steps.postgres-isolation.outputs.ready == 'true' }}
+        timeout-minutes: 2
+        run: docker compose --env-file /dev/null -f compose.test.yaml -p "$POSTGRES_TEST_PROJECT" down --volumes --remove-orphans --timeout 30
+
+  playwright-e2e:
+    name: playwright-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: .
+    env:
+      INFRAPULSE_TEST_PROJECT: infrapulse-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Set up Node matching the frontend Dockerfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install the locked Playwright Chromium and OS dependencies
+        working-directory: frontend
+        timeout-minutes: 5
+        run: npm exec --no -- playwright install --with-deps chromium
+      - name: Verify disposable integration lifecycle
+        run: python3 scripts/test_integration_support.py
+      - name: Run real Nginx PostgreSQL worker and browser regressions
+        timeout-minutes: 25
+        run: python3 scripts/validate-dashboard.py
+      - name: Clean up only the owned E2E project
+        if: ${{ always() }}
+        timeout-minutes: 3
+        run: python3 scripts/validate-dashboard.py --cleanup
+      - name: Upload Playwright JUnit and failure evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-e2e-results
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          if-no-files-found: error
+          retention-days: 7
+
+  observability-integration:
+    name: observability-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: .
+    env:
+      INFRAPULSE_TEST_PROJECT: infrapulse-observability-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Verify disposable integration lifecycle
+        run: python3 scripts/test_integration_support.py
+      - name: Run telemetry outage recovery and shutdown integration
+        timeout-minutes: 25
+        env:
+          OBSERVABILITY_RESULTS_DIR: ${{ runner.temp }}/observability-results
+        run: bash scripts/validate-observability.sh
+      - name: Clean up only the owned observability project
+        if: ${{ always() }}
+        timeout-minutes: 3
+        run: bash scripts/validate-observability.sh --cleanup
+      - name: Upload observability JUnit reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: observability-integration-junit
+          path: ${{ runner.temp }}/observability-results/*.xml
+          if-no-files-found: error
+          retention-days: 7
+
+  docker-build:
+    name: docker-build
+    needs: [api-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    outputs:
+      image_export: ${{ steps.image_export.outcome }}
+      image_upload: ${{ steps.image_upload.outcome }}
+    defaults:
+      run:
+        working-directory: .
+    env:
+      INFRAPULSE_TEST_PROJECT: infrapulse-images-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Download the contract from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-contract-openapi
+          path: ${{ runner.temp }}/api-contract
+      - name: Verify lifecycle and image inspection gates
+        run: |
+          python3 scripts/test_integration_support.py
+          python3 scripts/test_image_validation.py
+      - name: Build inspect and smoke runtime images without publishing
+        timeout-minutes: 28
+        run: >-
+          python3 scripts/validate-images.py
+          --schema "${{ runner.temp }}/api-contract/openapi.json"
+          --report "${{ runner.temp }}/docker-image-validation/report.json"
+          --retain-images
+      - name: Export and package inspected images for informational auditing
+        id: image_export
+        timeout-minutes: 2
+        # Only handoff failures are tolerated here. Their real outcomes are
+        # mandatory inputs to vulnerability-audit, which fails on operational errors.
+        continue-on-error: true
+        run: python3 scripts/vulnerability_ci.py --export-images "${{ runner.temp }}/vulnerability-images"
+      - name: Clean up only owned containers and image tags
+        if: ${{ always() }}
+        timeout-minutes: 3
+        run: python3 scripts/validate-images.py --cleanup
+      - name: Upload sanitized image validation report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: docker-image-validation
+          path: ${{ runner.temp }}/docker-image-validation/report.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Hand off inspected runtime images to the same-run informational audit
+        id: image_upload
+        if: ${{ success() && steps.image_export.outcome == 'success' }}
+        timeout-minutes: 2
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vulnerability-images-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/vulnerability-images/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  vulnerability-audit:
+    name: vulnerability-audit (informational)
+    # Deliberately outside ci-required: findings never approve a baseline.
+    # Operational failures fail this job; only the producer's handoff steps tolerate errors.
+    needs: [docker-build]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Check out this commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python and cache only scanner wheels
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: security/vulnerability-tools.lock
+      - name: Set up the existing npm scanner version
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+      - name: Verify parser classifier handoff and operational failure regressions
+        run: |
+          python3 scripts/test_vulnerability_audit.py
+          python3 scripts/test_vulnerability_triage.py
+          python3 scripts/test_vulnerability_ci.py
+      - name: Install isolated hash-locked scanners
+        id: scanners
+        run: |
+          python3 -m venv "${{ runner.temp }}/vulnerability-tools"
+          "${{ runner.temp }}/vulnerability-tools/bin/python" -m pip --isolated install --require-hashes --only-binary=:all: --disable-pip-version-check --index-url https://pypi.org/simple -r security/vulnerability-tools.lock
+          "${{ runner.temp }}/vulnerability-tools/bin/python" -m pip check
+          python3 scripts/vulnerability_ci.py --install-trivy "${{ runner.temp }}/vulnerability-tools/bin"
+      - name: Download images inspected in this workflow run
+        id: images
+        if: ${{ success() && needs.docker-build.result == 'success' && needs.docker-build.outputs.image_upload == 'success' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          # Exact pattern: zero matches leaves the destination absent (NOT_RUN).
+          # Transport/digest failures retain outcome=failure (SCANNER_ERROR).
+          pattern: vulnerability-images-${{ github.sha }}-${{ github.run_attempt }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/vulnerability-images
+      - name: Audit all targets and classify without accepting findings
+        if: ${{ !cancelled() }}
+        run: >-
+          python3 scripts/vulnerability_ci.py
+          --pip-audit "${{ runner.temp }}/vulnerability-tools/bin/pip-audit"
+          --trivy "${{ runner.temp }}/vulnerability-tools/bin/trivy"
+          --archives "${{ runner.temp }}/vulnerability-images"
+          --output-dir "${{ runner.temp }}/vulnerability-reports"
+          --preparation-result "${{ steps.scanners.outcome }}"
+          --handoff-result "${{ steps.images.outcome }}"
+          --export-result "${{ needs.docker-build.outputs.image_export || 'skipped' }}"
+          --upload-result "${{ needs.docker-build.outputs.image_upload || 'skipped' }}"
+      - name: Upload only sanitized JSON evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: vulnerability-audit-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/vulnerability-reports/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  security-foundations:
+    name: security-foundations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Check out repository and complete HEAD ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Set up Node matching the existing lockfile
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Validate npm integrity before installing the existing YAML parser
+        run: python3 scripts/check_supply_chain.py --npm-only
+      - name: Install locked dependencies without lifecycle scripts
+        working-directory: frontend
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Exercise positive negative and fail-closed security regressions
+        run: |
+          python3 scripts/test_supply_chain.py
+          python3 scripts/test_locked_install.py
+      - name: Exercise image coverage and OCI layer regressions
+        run: |
+          python3 -m venv "${{ runner.temp }}/coverage-tools"
+          "${{ runner.temp }}/coverage-tools/bin/python" -m pip --isolated install \
+            --require-hashes --only-binary=:all: --disable-pip-version-check \
+            --index-url https://pypi.org/simple -r security/sbom-tools.lock
+          "${{ runner.temp }}/coverage-tools/bin/python" -m pip check
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_image_coverage_contract.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_virtual_layers.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_image_inventory.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_package_reconciliation.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_package_adapters.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_reconciliation_report.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_reconciliation_pipeline.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_f3c3_reconciliation.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_ci_evidence_signature.py
+      - name: Validate signed OCI fixture with disposable keys
+        timeout-minutes: 4
+        env:
+          COSIGN_BINARY: ${{ runner.temp }}/infrapulse-oci-cosign/cosign
+        run: |
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/ci_f3c3_validation.py install-cosign \
+            --project-root "$GITHUB_WORKSPACE" --output "$COSIGN_BINARY"
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/validate_signed_oci_fixture.py
+      - name: Scan checkout and HEAD history with verified Gitleaks and fixtures
+        run: python3 scripts/check_secrets.py --report "${{ runner.temp }}/security-foundations/secrets.json"
+      - name: Enforce every supply chain policy
+        if: ${{ !cancelled() }}
+        run: python3 scripts/check_supply_chain.py --enforce all --report "${{ runner.temp }}/security-foundations/policy.json"
+      - name: Upload sanitized security evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-foundations
+          path: ${{ runner.temp }}/security-foundations/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  ci-evidence:
+    name: ci-evidence (unsigned)
+    needs: [docker-build]
+    # Evidence generation processes Docker archives, so run only after trusted
+    # branch pushes; PR workflows never load PR-controlled images into Docker.
+    if: ${{ github.event_name == 'push' && needs.docker-build.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Check out the exact commit without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: security/sbom-tools.lock
+      - name: Install hash-locked SBOM validator and verified Trivy
+        run: |
+          python3 -m venv "${{ runner.temp }}/sbom-tools"
+          "${{ runner.temp }}/sbom-tools/bin/python" -m pip --isolated install \
+            --require-hashes --only-binary=:all: --disable-pip-version-check \
+            --index-url https://pypi.org/simple -r security/sbom-tools.lock
+          "${{ runner.temp }}/sbom-tools/bin/python" -m pip check
+          python3 scripts/vulnerability_ci.py --install-trivy "${{ runner.temp }}/sbom-tools/bin"
+      - name: Download the exact same-run Docker image handoff
+        if: ${{ needs.docker-build.outputs.image_upload == 'success' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: vulnerability-images-${{ github.sha }}-${{ github.run_attempt }}
+          digest-mismatch: error
+          path: ${{ runner.temp }}/ci-evidence-image-handoff
+      - name: Generate SBOMs and validate unsigned provenance
+        env:
+          CI_COMMIT: ${{ github.sha }}
+          CI_RUN_ID: ${{ github.run_id }}
+          CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CI_REPOSITORY: ${{ github.repository }}
+          CI_WORKFLOW: ${{ github.workflow }}
+          DOCKER_IMAGE_UPLOAD: ${{ needs.docker-build.outputs.image_upload }}
+          EVIDENCE_OUTPUT: ${{ runner.temp }}/ci-evidence
+          IMAGE_HANDOFF: ${{ runner.temp }}/ci-evidence-image-handoff
+          TRIVY: ${{ runner.temp }}/sbom-tools/bin/trivy
+          SBOM_PYTHON: ${{ runner.temp }}/sbom-tools/bin/python
+        run: |
+          if [[ "$DOCKER_IMAGE_UPLOAD" != "success" ]]; then
+            echo "::error::The same-run Docker image handoff was not uploaded successfully."
+            exit 1
+          fi
+          "$SBOM_PYTHON" scripts/ci_evidence.py \
+            --output "$EVIDENCE_OUTPUT" \
+            --handoff "$IMAGE_HANDOFF" \
+            --trivy "$TRIVY" \
+            --commit "$CI_COMMIT" \
+            --run-id "$CI_RUN_ID" \
+            --run-attempt "$CI_RUN_ATTEMPT" \
+            --repository "$CI_REPOSITORY" \
+            --workflow "$CI_WORKFLOW"
+      - name: Check for sanitized image root diagnostics
+        id: root_diagnostic
+        if: ${{ always() }}
+        env:
+          EVIDENCE_OUTPUT: ${{ runner.temp }}/ci-evidence
+        run: |
+          if [[ -e "$EVIDENCE_OUTPUT" || -L "$EVIDENCE_OUTPUT" ]]; then
+            if [[ ! -d "$EVIDENCE_OUTPUT" || -L "$EVIDENCE_OUTPUT" ]]; then
+              echo "::error::Diagnostic output path is not a real directory."
+              exit 1
+            fi
+            shopt -s nullglob
+            for candidate in "$EVIDENCE_OUTPUT"/*-root-diagnostic.json; do
+              case "$candidate" in
+                "$EVIDENCE_OUTPUT/backend-image.root-diagnostic.json"|\
+                "$EVIDENCE_OUTPUT/nginx-image.root-diagnostic.json") ;;
+                *)
+                  echo "::error::Unexpected diagnostic artifact path."
+                  exit 1
+                  ;;
+              esac
+            done
+            diagnostic_paths=()
+            for image in backend-image nginx-image; do
+              diagnostic_path="$EVIDENCE_OUTPUT/${image}.root-diagnostic.json"
+              if [[ -e "$diagnostic_path" || -L "$diagnostic_path" ]]; then
+                if [[ ! -f "$diagnostic_path" || -L "$diagnostic_path" ]]; then
+                  echo "::error::Diagnostic path is not a regular non-symlink file."
+                  exit 1
+                fi
+                diagnostic_paths+=("$diagnostic_path")
+              fi
+            done
+            if ((${#diagnostic_paths[@]})); then
+              {
+                echo "exists=true"
+                echo "paths<<ROOT_DIAGNOSTIC_PATHS"
+                printf '%s\n' "${diagnostic_paths[@]}"
+                echo "ROOT_DIAGNOSTIC_PATHS"
+              } >> "$GITHUB_OUTPUT"
+            else
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload sanitized image root diagnostics
+        if: ${{ always() && steps.root_diagnostic.outputs.exists == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-root-diagnostics-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ steps.root_diagnostic.outputs.paths }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload validated unsigned CI evidence
+        if: ${{ success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+  ci-required:
+    name: ci-required
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: ${{ always() }}
+    # Add future gates here; keep the public job name stable.
+    needs:
+      - backend-quality
+      - backend-unit
+      - api-contract
+      - frontend-quality
+      - frontend-tests
+      - frontend-build
+      - backend-postgres
+      - playwright-e2e
+      - observability-integration
+      - docker-build
+      - security-foundations
+    steps:
+      - name: Require every dependency to succeed
+        working-directory: .
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        # Inspect all dependencies so future phases only extend the needs list.
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ['NEEDS_JSON'])
+          for name, job in results.items():
+              print(f"{name}: {job['result']}")
+          sys.exit(0 if results and all(
+              job['result'] == 'success' for job in results.values()
+          ) else 1)
+          PY

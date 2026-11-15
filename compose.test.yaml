@@ -1,0 +1,35 @@
+# Standalone project: no development database, network or volume is reused.
+# Worker integration runs as a subprocess of tests against a controlled local server.
+services:
+  test-db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: infrapulse_test
+      POSTGRES_USER: infrapulse_test
+      POSTGRES_PASSWORD: ${INFRAPULSE_TEST_PASSWORD:?Set an ephemeral test password}
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infrapulse_test -d infrapulse_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [test]
+  tests:
+    build:
+      context: ./backend
+      target: test
+    environment:
+      POSTGRES_HOST: test-db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: infrapulse_test
+      POSTGRES_USER: infrapulse_test
+      POSTGRES_PASSWORD: ${INFRAPULSE_TEST_PASSWORD:?Set an ephemeral test password}
+      INFRAPULSE_RUN_INTEGRATION: "1"
+    depends_on:
+      test-db:
+        condition: service_healthy
+    networks: [test]
+networks:
+  test:
+    internal: true
