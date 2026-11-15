@@ -14,9 +14,10 @@ from pathlib import PurePosixPath
 
 BLOCK = 512
 MAX_LAYERS = 64
-MAX_LAYER_BYTES = 16 * 1024 * 1024
-MAX_TOTAL_BYTES = 64 * 1024 * 1024
-MAX_ENTRIES = 10000
+MAX_LAYER_BYTES = 128 * 1024 * 1024
+MAX_TOTAL_BYTES = 256 * 1024 * 1024
+MAX_ENTRIES = 100000
+MAX_PAX_BYTES = 1024 * 1024
 MAX_PATH_BYTES = 255
 MAX_DEPTH = 32
 SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -66,9 +67,17 @@ def _device_number(field: bytes) -> int:
 
 
 def _path(value: str, *, allow_whiteout: bool = False) -> str:
-    if not value or len(value.encode("ascii")) > MAX_PATH_BYTES:
+    if not value:
         raise ValueError("Invalid path length")
-    if any(ord(char) < 32 or ord(char) == 127 or char == "\\" for char in value):
+    try:
+        encoded = value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Invalid path encoding") from exc
+    if len(encoded) > MAX_PATH_BYTES:
+        raise ValueError("Invalid path length")
+    if any(
+        ord(char) < 32 or 0x7F <= ord(char) <= 0x9F or char == "\\" for char in value
+    ):
         raise ValueError("Unsupported path characters")
     parts = value.split("/")
     if len(parts) > MAX_DEPTH or any(part in {"", ".", ".."} for part in parts):
@@ -76,6 +85,59 @@ def _path(value: str, *, allow_whiteout: bool = False) -> str:
     if not allow_whiteout and any(part.startswith(".wh.") for part in parts):
         raise ValueError("Whiteouts are not supported")
     return value
+
+
+def _symlink_target(value: str) -> str:
+    """Validate a link value without resolving it or treating it as a host path."""
+    try:
+        encoded = value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Invalid symlink target encoding") from exc
+    if (
+        not encoded
+        or len(encoded) > 4096
+        or any(
+            ord(char) < 32 or 0x7F <= ord(char) <= 0x9F or char == "\\"
+            for char in value
+        )
+    ):
+        raise ValueError("Invalid symlink target")
+    return value
+
+
+def _pax_records(payload: bytes) -> dict[str, str]:
+    """Parse the restricted local PAX path metadata used by observed images."""
+    if not payload or len(payload) > MAX_PAX_BYTES:
+        raise ValueError("Invalid PAX metadata size")
+    result: dict[str, str] = {}
+    offset = 0
+    while offset < len(payload):
+        separator = payload.find(b" ", offset)
+        if separator <= offset or separator - offset > 10:
+            raise ValueError("Invalid PAX record length")
+        length_bytes = payload[offset:separator]
+        if not length_bytes.isdigit():
+            raise ValueError("Invalid PAX record length")
+        length = int(length_bytes)
+        end = offset + length
+        if length <= separator - offset + 3 or end > len(payload):
+            raise ValueError("Invalid PAX record bounds")
+        record = payload[separator + 1 : end]
+        if not record.endswith(b"\n") or record.count(b"=") < 1:
+            raise ValueError("Malformed PAX record")
+        key_bytes, value_bytes = record[:-1].split(b"=", 1)
+        if key_bytes not in {b"path", b"linkpath"} or not value_bytes:
+            raise ValueError("Unsupported PAX metadata")
+        try:
+            key = key_bytes.decode("ascii")
+            value = value_bytes.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Invalid PAX metadata encoding") from exc
+        if key in result:
+            raise ValueError("Duplicate PAX metadata key")
+        result[key] = value
+        offset = end
+    return result
 
 
 def _read_layer(
@@ -87,39 +149,85 @@ def _read_layer(
     paths: dict[str, str] = {}
     parents: set[str] = set()
     offset = 0
+    pax: dict[str, str] | None = None
     while offset + BLOCK <= len(data):
         header = data[offset : offset + BLOCK]
         if not any(header):
             if offset + BLOCK * 2 > len(data) or any(data[offset:]):
                 raise ValueError("Invalid TAR terminator")
+            if pax is not None:
+                raise ValueError("Dangling PAX metadata")
             return tuple(entries)
         if len(entries) >= entry_budget:
             raise ValueError("Total entry limit exceeded")
-        if header[257:263] != b"ustar\0" or header[263:265] != b"00":
-            raise ValueError("Only USTAR layers are supported")
+        ustar = header[257:263] == b"ustar\0" and header[263:265] == b"00"
+        gnu = header[257:263] == b"ustar " and header[263:265] == b" \0"
+        if not (ustar or gnu):
+            raise ValueError("Unsupported TAR header profile")
         if _number(header[148:156]) != sum(header[:148]) + 256 + sum(header[156:]):
             raise ValueError("Invalid TAR header checksum")
+        tar_type = header[156:157]
+        size = _number(header[124:136])
+        if tar_type == b"x":
+            if pax is not None or size > MAX_PAX_BYTES:
+                raise ValueError("Nested or oversized PAX metadata")
+            pax_name = _text(header[:100])
+            if ustar:
+                pax_prefix = _text(header[345:500])
+                pax_name = f"{pax_prefix}/{pax_name}" if pax_prefix else pax_name
+            if gnu and any(header[345:500]):
+                raise ValueError("Unsupported GNU TAR extension metadata")
+            if pax_name != "././@PaxHeader":
+                _path(pax_name)
+            pax_mode = _number(header[100:108])
+            pax_uid = _number(header[108:116])
+            pax_gid = _number(header[116:124])
+            _number(header[136:148])
+            _text(header[157:257])
+            _text(header[265:297])
+            _text(header[297:329])
+            if (
+                pax_mode > 0o7777
+                or pax_uid > 2**32 - 1
+                or pax_gid > 2**32 - 1
+                or _device_number(header[329:337])
+                or _device_number(header[337:345])
+                or any(header[500:512])
+            ):
+                raise ValueError("Unsupported PAX TAR metadata")
+            end = offset + BLOCK + ((size + BLOCK - 1) // BLOCK) * BLOCK
+            if end > len(data) or any(data[offset + BLOCK + size : end]):
+                raise ValueError("Truncated PAX metadata or invalid padding")
+            pax = _pax_records(data[offset + BLOCK : offset + BLOCK + size])
+            offset = end
+            continue
+        if tar_type in {b"g", b"L", b"K", b"S"}:
+            raise ValueError("Unsupported TAR extension type")
         kind = {
             b"0": "file",
             b"\0": "file",
             b"5": "directory",
             b"2": "symlink",
             b"1": "hardlink",
-        }.get(header[156:157])
+        }.get(tar_type)
         if kind is None:
             raise ValueError("Unsupported TAR entry type")
         name = _text(header[:100])
-        prefix = _text(header[345:500])
+        prefix = _text(header[345:500]) if ustar else ""
+        if gnu and any(header[345:500]):
+            raise ValueError("Unsupported GNU TAR extension metadata")
         name = f"{prefix}/{name}" if prefix else name
+        if pax and "path" in pax:
+            name = pax["path"]
         if kind == "directory" and name.endswith("/"):
             name = name[:-1]
-        name = _path(name, allow_whiteout=rootfs)
-        components = name.split("/")
-        if any(part.startswith(".wh.") for part in components[:-1]):
+        if name != ".":
+            name = _path(name, allow_whiteout=rootfs)
+        components = name.split("/") if name != "." else ["."]
+        if name != "." and any(part.startswith(".wh.") for part in components[:-1]):
             raise ValueError("Whiteout in parent path")
         if not rootfs and kind == "hardlink":
             raise ValueError("Unsupported TAR entry type")
-        size = _number(header[124:136])
         mode = _number(header[100:108])
         uid = _number(header[108:116])
         gid = _number(header[116:124])
@@ -136,10 +244,24 @@ def _read_layer(
         ):
             raise ValueError("Unsupported TAR metadata")
         link = _text(header[157:257])
+        if pax and "linkpath" in pax:
+            link = pax["linkpath"]
         if kind in {"symlink", "hardlink"}:
-            link = _path(link)
+            if kind == "symlink":
+                link = _symlink_target(link)
+            else:
+                link = _path(link)
         elif link:
             raise ValueError("Unexpected link target")
+        if name == ".":
+            if kind != "directory" or size:
+                raise ValueError("Invalid TAR root directory entry")
+            end = offset + BLOCK + ((size + BLOCK - 1) // BLOCK) * BLOCK
+            if end > len(data) or any(data[offset + BLOCK + size : end]):
+                raise ValueError("Truncated TAR member or invalid padding")
+            offset = end
+            pax = None
+            continue
         if components[-1].startswith(".wh.") and (
             kind != "file" or size or components[-1] in {".wh.", ".wh..", ".wh..."}
         ):
@@ -180,6 +302,7 @@ def _read_layer(
             )
         )
         offset = end
+        pax = None
     raise ValueError("Missing TAR terminator")
 
 

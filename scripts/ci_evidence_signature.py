@@ -2208,7 +2208,7 @@ def sign_evidence(
         os.close(parent_fd)
 
 
-def verify_evidence(
+def verify_evidence_with_sboms(
     evidence_dir: Path,
     handoff_dir: Path,
     signature_dir: Path,
@@ -2223,7 +2223,12 @@ def verify_evidence(
     expected_repository: str,
     expected_image_ids: dict[str, str],
     canonicalize_oci: bool = False,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, bytes]]:
+    """Verify the complete package and return exact validated image SBOM bytes.
+
+    No snapshot is returned until all existing handoff, policy, signature and
+    provenance checks succeed; immutable bytes are retained from the initial read.
+    """
     data, manifest = _load_and_validate(
         evidence_dir,
         expected_commit,
@@ -2297,7 +2302,7 @@ def verify_evidence(
                 trivy,
                 expected_image_ids.get(name) if name.endswith("-image") else None,
             )
-    return {
+    verification = {
         "status": "VERIFIED",
         "integrity": "INTEGRITY_VERIFIED",
         "signature": "SIGNATURE_VALID",
@@ -2319,6 +2324,46 @@ def verify_evidence(
             else {}
         ),
     }
+
+    return verification, {
+        name: data[f"{name}.cdx.json"] for name in sorted(expected_image_ids)
+    }
+
+
+def verify_evidence(
+    evidence_dir: Path,
+    handoff_dir: Path,
+    signature_dir: Path,
+    cosign: Path,
+    trivy: Path,
+    policy_path: Path,
+    policy_sha256: str,
+    key_id: str,
+    expected_commit: str,
+    expected_run_id: str,
+    expected_run_attempt: int,
+    expected_repository: str,
+    expected_image_ids: dict[str, str],
+    canonicalize_oci: bool = False,
+) -> dict[str, Any]:
+    """Verify the package and retain the existing summary-only API."""
+    verification, _ = verify_evidence_with_sboms(
+        evidence_dir,
+        handoff_dir,
+        signature_dir,
+        cosign,
+        trivy,
+        policy_path,
+        policy_sha256,
+        key_id,
+        expected_commit,
+        expected_run_id,
+        expected_run_attempt,
+        expected_repository,
+        expected_image_ids,
+        canonicalize_oci,
+    )
+    return verification
 
 
 def main() -> int:

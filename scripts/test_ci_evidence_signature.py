@@ -708,6 +708,49 @@ class EvidenceSignatureTests(unittest.TestCase):
         self.assertEqual(verified["signature"], "SIGNATURE_VALID")
         self.assertEqual(verified["integrity"], "INTEGRITY_VERIFIED")
 
+    def test_verified_sbom_snapshot_survives_source_replacement(self) -> None:
+        with self.signing_mocks():
+            evidence_signature.sign_evidence(*self.arguments())
+        path = self.evidence / "backend-image.cdx.json"
+        original = path.read_bytes()
+
+        def verify_then_mutate(payload, bundle, policy, policy_hash, key_id, cosign):
+            result = self.fake_verify(
+                payload, bundle, policy, policy_hash, key_id, cosign
+            )
+            path.write_bytes(b"changed after snapshot")
+            return result
+
+        with (
+            patch.object(
+                vulnerability_ci, "identity", side_effect=self.handoff_identity
+            ),
+            patch.object(
+                signature, "verify_blob_bytes", side_effect=verify_then_mutate
+            ),
+            patch.object(
+                signature, "verify_signature", side_effect=self.fake_statement_verify
+            ),
+        ):
+            verification, snapshots = evidence_signature.verify_evidence_with_sboms(
+                self.evidence,
+                self.handoff,
+                self.bundles,
+                self.cosign,
+                self.trivy,
+                self.policy,
+                self.policy_hash,
+                self.key_id,
+                COMMIT,
+                RUN_ID,
+                ATTEMPT,
+                REPOSITORY,
+                IMAGE_IDS,
+            )
+        self.assertEqual(verification["signature"], "SIGNATURE_VALID")
+        self.assertEqual(snapshots["backend-image"], original)
+        self.assertNotEqual(path.read_bytes(), original)
+
     def _canonicalizer_mock(self, wrong_source_digest: bool = False):
         def canonicalize(source: Path, destination: Path, image_id: str):
             original = source.read_bytes()

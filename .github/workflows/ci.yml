@@ -574,6 +574,8 @@ jobs:
           "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_package_adapters.py
           "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_reconciliation_report.py
           "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_reconciliation_pipeline.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_oci_f3c3_reconciliation.py
+          "${{ runner.temp }}/coverage-tools/bin/python" scripts/test_ci_evidence_signature.py
       - name: Validate signed OCI fixture with disposable keys
         timeout-minutes: 4
         env:
