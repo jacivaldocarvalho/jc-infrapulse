@@ -1,20 +1,16 @@
-# Arquitetura do InfraPulse
+# InfraPulse architecture
 
-Esta visão descreve a implementação local e o workflow CI deste checkout. A stack
-Compose é destinada ao desenvolvimento; o produto não oferece autenticação ou
-autorização. Consulte as decisões em [ADR](adr/0001-http-monitoring.md) e os guias
-de [monitoramento](operations/monitoring.md), [observabilidade](operations/observability.md)
-e [frontend](operations/frontend.md).
+This overview describes the local implementation and CI workflow in this checkout. The Compose stack is intended for development; the product does not provide authentication or authorization. See the decisions in the [ADRs](adr/0001-http-monitoring.md) and the [monitoring](operations/monitoring.md), [observability](operations/observability.md), and [frontend](operations/frontend.md) guides.
 
-## Arquitetura geral
+## System overview
 
 ```mermaid
 flowchart LR
-    Browser[Navegador] --> Frontend[Frontend e proxy Nginx]
-    Frontend --> API[API FastAPI]
+    Browser[Browser] --> Frontend[Frontend and Nginx proxy]
+    Frontend --> API[FastAPI API]
     API --> DB[(PostgreSQL)]
-    Worker[Worker de monitoramento] --> DB
-    Worker --> Target[Serviços monitorados]
+    Worker[Monitoring worker] --> DB
+    Worker --> Target[Monitored services]
     API --> Collector[OpenTelemetry Collector]
     Worker --> Collector
     Collector --> Tempo[Tempo]
@@ -25,69 +21,56 @@ flowchart LR
     Grafana --> Tempo
 ```
 
-O frontend, a API e o Grafana são publicados em loopback na configuração Compose.
-O worker é um processo independente e a implantação atual prevê uma única réplica.
-As setas de Prometheus para API e worker representam coleta nos listeners de
-métricas separados das portas funcionais.
+The frontend, API, and Grafana are published on loopback by the Compose configuration. The worker is a separate process, and the current deployment design uses one replica. The arrows from Prometheus to the API and worker represent scraping metric listeners that are separate from the functional ports.
 
-## API e worker
+## API and worker
 
 ```mermaid
 flowchart TD
-    Client[Cliente] --> Registry[API de cadastro]
+    Client[Client] --> Registry[Service registry API]
     Registry --> DB[(PostgreSQL)]
-    Scheduler[Scheduler do worker] --> DB
-    Scheduler --> Policy[Resolução DNS e política de URL]
-    Policy --> Transport[Conexão HTTP a IP autorizado]
-    Transport --> Target[Serviço monitorado]
-    Transport --> Results[Resultado do check]
+    Scheduler[Worker scheduler] --> DB
+    Scheduler --> Policy[DNS resolution and URL policy]
+    Policy --> Transport[HTTP connection to an authorized IP]
+    Transport --> Target[Monitored service]
+    Transport --> Results[Check result]
     Results --> DB
-    DB --> Monitoring[API de histórico, status e métricas]
+    DB --> Monitoring[History, status, and metrics API]
     Monitoring --> Client
 ```
 
-A política valida o destino antes da conexão, preservando hostname para Host e
-TLS. O worker não usa proxies ou redirecionamentos para os checks. A API calcula
-as métricas históricas a partir dos resultados persistidos; não há retenção
-automática no PostgreSQL. Detalhes e limites estão no
-[ADR 0001](adr/0001-http-monitoring.md) e no [guia de monitoramento](operations/monitoring.md).
+The policy validates the target before connecting while preserving the hostname for Host and TLS. The worker does not use proxies or redirects for checks. The API computes historical metrics from persisted results; PostgreSQL has no automatic retention. Details and limits are in [ADR 0001](adr/0001-http-monitoring.md) and the [monitoring guide](operations/monitoring.md).
 
-## Observabilidade
+## Observability
 
 ```mermaid
 flowchart LR
-    API[API] -->|traces OTLP| Collector[Collector]
-    Worker[Worker] -->|traces OTLP| Collector
+    API[API] -->|OTLP traces| Collector[Collector]
+    Worker[Worker] -->|OTLP traces| Collector
     Collector --> Tempo[Tempo]
-    Prometheus[Prometheus] -->|coleta métricas| API
-    Prometheus -->|coleta métricas| Worker
-    Prometheus -->|alertas| Alertmanager[Alertmanager]
-    Grafana[Grafana] -->|consultas| Prometheus
-    Grafana -->|consultas| Tempo
+    Prometheus[Prometheus] -->|scrapes metrics| API
+    Prometheus -->|scrapes metrics| Worker
+    Prometheus -->|alerts| Alertmanager[Alertmanager]
+    Grafana[Grafana] -->|queries| Prometheus
+    Grafana -->|queries| Tempo
 ```
 
-Traces são best effort. O receiver padrão do Alertmanager é local, sem integração
-de notificação externa. Veja o [ADR 0002](adr/0002-observability-architecture.md)
-e o [guia operacional](operations/observability.md).
+Traces are best effort. The default Alertmanager receiver is local, with no external notification integration. See [ADR 0002](adr/0002-observability-architecture.md) and the [operations guide](operations/observability.md).
 
 ## CI/CD
 
 ```mermaid
 flowchart LR
-    Change[Push ou pull request] --> Quality[Qualidade, testes e contrato API]
-    Change --> Integration[Testes PostgreSQL, frontend e observabilidade]
+    Change[Push or pull request] --> Quality[Quality, tests, and API contract]
+    Change --> Integration[PostgreSQL, frontend, and observability tests]
     Change --> Security[security-foundations]
-    Change --> Images[Build e validação de imagens]
+    Change --> Images[Image build and validation]
     Quality --> Required[ci-required]
     Integration --> Required
     Security --> Required
     Images --> Required
-    Images --> Audit[vulnerability-audit informativo]
-    Images --> Evidence[ci-evidence sem assinatura]
+    Images --> Audit[informational vulnerability-audit]
+    Images --> Evidence[unsigned ci-evidence]
 ```
 
-O diagrama resume dependências do [workflow CI](../.github/workflows/ci.yml):
-`ci-required` agrega seus jobs dependentes, enquanto auditoria de vulnerabilidades
-e geração de evidências têm resultados próprios. Ele não representa implantação
-ou publicação. Os limites de proveniência e cobertura são descritos em
-[proveniência](provenance-f3b1.md) e [evidências CI](ci-evidence-f3c2.md).
+The diagram summarizes dependencies in the [CI workflow](../.github/workflows/ci.yml): `ci-required` aggregates its dependent jobs, while vulnerability auditing and evidence generation have separate results. It does not represent deployment or publication. Provenance and coverage limits are described in the [provenance guide](provenance-f3b1.md) and [CI evidence guide](ci-evidence-f3c2.md).

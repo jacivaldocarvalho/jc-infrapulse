@@ -1,37 +1,23 @@
 # Sprint 06 — F1A
 
-PASS local; CI remoto NOT RUN. Branch develop, HEAD bee93e8, sem staging/commit/push.
+Local PASS; remote CI NOT RUN. Branch develop, HEAD bee93e8, without staging/commit/push.
 
-Arquivos: `.github/workflows/ci.yml`, `security/gitleaks.toml`,
+Files: `.github/workflows/ci.yml`, `security/gitleaks.toml`,
 `scripts/check_secrets.py`, `scripts/check_supply_chain.py`,
-`scripts/test_supply_chain.py` e este relatório.
+`scripts/test_supply_chain.py`, and this report.
 
-Novo gate obrigatório `security-foundations`: Gitleaks, integridade npm e políticas
-de Actions. Dez jobs anteriores estruturalmente inalterados; `ci-required` exige
-também o novo job. Parser js-yaml 4.3.2 já travado, sem dependência adicional.
+New required gate `security-foundations`: Gitleaks, npm integrity, and Actions policies. Ten previous jobs structurally unchanged; `ci-required` also requires the new job. The js-yaml 4.3.2 parser was already locked, with no added dependency.
 
 [Gitleaks 8.30.1](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1), Linux x64,
 SHA-256 `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`.
-Fixtures sintéticas positivas/negativas; checkout versionável e ancestrais do HEAD;
-sem baseline/exclusões próprias ou permissões inline. Saída: regra, linha,
-hash do caminho; nenhum match/token/log bruto publicado. Erros falham fechados.
+Positive and negative synthetic fixtures; versionable checkout and HEAD ancestors; no custom baseline/exclusions or inline permissions. Output: rule, line, and path hash; no raw match, token, or log is published. Errors fail closed.
 
-FAIL/F1B_PENDING: 49 requisitos Python sem hashes; setuptools inexato/não
-travado e pip implícito; quatro FROM externos sem digest. Modo `--enforce all`
-retorna 1; ativo retorna 0 com auditoria explicitamente FAIL. F1B deverá também
-aplicar instalação Python com verificação efetiva de hashes.
+FAIL/F1B_PENDING: 49 Python requirements without hashes; setuptools version inexact and unlocked, pip implicit; four external FROM statements without digests. `--enforce all` returns 1; the active mode returns 0 while explicitly reporting a FAIL audit. F1B must also require actual hash verification during Python installation.
 
-PASS: `python3 scripts/test_supply_chain.py` (25), lifecycle (22), inspetor (21);
-Ruff check/formatação, actionlint, ShellCheck, whitespace incluindo arquivos novos;
-35 cenários do agregador, sanitização e instalação descartável sem `.env`.
+PASS: `python3 scripts/test_supply_chain.py` (25), lifecycle (22), inspector (21); Ruff check/format, actionlint, ShellCheck, and whitespace including new files; 35 aggregator scenarios, sanitization, and disposable installation without `.env`.
 
-Duração local: npm ci/cache existente 3,12s; Gitleaks/download 3,64s; políticas
-0,08s; regressões novas 1,26s. npm: 370 pacotes, 323MiB; overhead remoto não medido.
+Local duration: npm ci/existing cache 3,12s; Gitleaks/download 3,64s; policies 0,08s; new regressions 1,26s. npm: 370 packages, 323MiB; remote overhead was not measured.
 
-Entire: doctor/hooks PASS, um checkpoint anterior pendente; Brain cobre HEAD,
-alterações locais ainda não indexadas. Nenhuma configuração modificada.
+Entire: doctor/hooks PASS, one earlier checkpoint pending; Brain covers HEAD, with local changes not yet indexed. No configuration was modified.
 
-Riscos: falsos positivos, histórico crescente, download externo, parser transitivo.
-Digest não comprova proveniência; CVEs/SBOM/atestações e imagens Compose não
-verificados. Docker não executado; locks/imagens/Dockerfiles intactos.
-Pronto para revisão, aguardando autorização para versionamento e validação remota.
+Risks: false positives, growing history, external download, transitive parser. A digest does not establish provenance; CVEs/SBOM/attestations and Compose images were not verified. Docker was not run; locks, images, and Dockerfiles remained intact. Ready for review, awaiting authorization to version the changes and validate remotely.

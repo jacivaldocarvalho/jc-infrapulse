@@ -1,42 +1,42 @@
 # Sprint 06 — F2B
 
-Local, sem atualizações. Arquivos: `scripts/triage_vulnerabilities.py`,
+Local, without updates. Files: `scripts/triage_vulnerabilities.py`,
 `scripts/test_vulnerability_triage.py`,
-`security/vulnerability-{policy,assessments,exceptions}.json` e este relatório.
+`security/vulnerability-{policy,assessments,exceptions}.json`, and this report.
 
-Uso: `python3 scripts/triage_vulnerabilities.py --report "$F2A/summary.json" --output "$OUT/triage.json"`.
-Reutilizados os JSON F2A; nenhum scan completo. Exportações temporárias dos
-runtimes fixados forneceram metadados/ELF, sem carregar imagens ou criar containers.
+Usage: `python3 scripts/triage_vulnerabilities.py --report "$F2A/summary.json" --output "$OUT/triage.json"`.
+F2A JSON files reused; no full scan. Temporary exports of pinned runtimes
+provided metadata/ELF without loading images or creating containers.
 
-Resultado FINDINGS: 422 registros únicos por scanner/pacote/versão/advisory/alvo;
-420 combinações componente/advisory. Aliases e duplicatas são consolidados sem
-fundir versões/alvos. Classificação separa runtime, build-only, vendorizadas,
-diretas, transitivas e sistema; ferramentas presentes no runtime não viram build-only.
+FINDINGS result: 422 unique records by scanner/package/version/advisory/target;
+420 component/advisory combinations. Aliases and duplicates are consolidated
+without merging versions or targets. Classification separates runtime, build-only,
+vendored, direct, transitive, and system components; tools present in runtime are not build-only.
 
-Prioridades: 47 ocorrências Alpine HIGH/CRITICAL corrigíveis, confirmadas contra
-APK/secdb 3.23; duas urllib3 vendorizadas no pip, corrigidas em 2.8.0.
+Priorities: 47 fixable Alpine HIGH/CRITICAL findings, confirmed against
+APK/secdb 3.23; two urllib3 copies vendored in pip, fixed in 2.8.0.
 [CVE-2026-111497](https://github.com/google/brotli/releases/tag/v1.2.1):
-brotli-libs 1.2.0-r0 → 1.2.1-r0; exposição HTTP não demonstrada.
+brotli-libs 1.2.0-r0 → 1.2.1-r0; HTTP exposure was not demonstrated.
 
-Nove avaliações contextuais não aplicáveis preservam os findings: setuptools
-Windows/macOS e componentes removidos do vendoring pip/msgpack.
-[Vendoring oficial](https://raw.githubusercontent.com/pypa/pip/26.2.2/pyproject.toml).
-19 correspondências Debian permanecem afetadas, sem correção Trixie confirmada;
-fix em unstable/no-dsa não comprova backport. Outras 345 requerem triagem adicional.
+Nine contextually non-applicable assessments retain the findings: setuptools
+Windows/macOS and components removed from pip/msgpack vendoring.
+[Official vendoring](https://raw.githubusercontent.com/pypa/pip/26.2.2/pyproject.toml).
+19 Debian matches remain affected, without a confirmed Trixie fix;
+a fix in unstable/no-dsa does not prove a backport. Another 345 need further triage.
 
-Política somente proposta: bloquear novas HIGH/CRITICAL confirmadas/corrigíveis;
-incertezas relevantes exigem revisão. Resultado candidato: 49 confirmadas, quatro
-UNKNOWN corrigíveis pendentes. Baseline não aprovado; exceções vazias.
-Exceções exigem identidade/fingerprint exatos, justificativa, responsável,
-aprovador, referência e expiração até 30 dias. Contexto/versão/risco alterados
-reabrem revisão; expiração nunca aprova silenciosamente.
+Proposed policy only: block new confirmed/fixable HIGH/CRITICAL findings;
+material uncertainties require review. Candidate result: 49 confirmed, four
+fixable UNKNOWN findings pending. Baseline not approved; exceptions empty.
+Exceptions require exact identity/fingerprint, justification, owner,
+approver, reference, and expiration within 30 days. Changed context/version/risk
+reopens review; expiration never silently grants approval.
 
-Estados/códigos: PASS/0, FINDINGS/1, SCANNER_ERROR/2, NOT_RUN/3;
-decisão proposta separada, sem ocultar backlog. Erros/ausências não admitem waiver.
+States/codes: PASS/0, FINDINGS/1, SCANNER_ERROR/2, NOT_RUN/3;
+proposed decision separate, without hiding the backlog. Errors or missing data cannot be waived.
 
-PASS: 23 testes novos, 96 regressões, Ruff, actionlint, ShellCheck, Gitleaks,
-whitespace e política F1. Workflow/12 jobs intactos.
-Git develop/1288ad74, staging vazio. Entire doctor/hooks PASS, um checkpoint
-pendente; Brain cobre HEAD.
-Riscos: fontes divergentes setuptools, backports, alcance não reproduzido.
-Sem staging/commit/push/deploy; F3 não iniciada.
+PASS: 23 new tests, 96 regressions, Ruff, actionlint, ShellCheck, Gitleaks,
+whitespace, and F1 policy. Workflow/12 jobs unchanged.
+Git develop/1288ad74, staging empty. Entire doctor/hooks PASS, one checkpoint
+pending; Brain covers HEAD.
+Risks: divergent setuptools sources, backports, unreplicated reachability.
+No staging/commit/push/deploy; F3 not started.

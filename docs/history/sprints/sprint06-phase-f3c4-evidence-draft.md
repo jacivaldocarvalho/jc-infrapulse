@@ -1,51 +1,51 @@
-# F3C.4.3 e F3C.4.4 — preparação de evidências
+# F3C.4.3 and F3C.4.4 — Evidence preparation
 
-O relatório preliminar em `scripts/oci_reconciliation_report.py` versiona um
-resumo de comparação e hashes de bytes fornecidos pelo chamador. Ele registra
-explicitamente que os bytes não foram vinculados à comparação, que origem,
-independência e plataforma não foram verificadas e que não há prova de cobertura
-completa. Os hashes são rotulados como não verificados. O estado é sempre
-`COVERAGE_PARTIAL`; este objeto não altera o contrato de cobertura v1 e não é
-evidência de origem, integridade autenticada ou aprovação operacional.
+The preliminary report in `scripts/oci_reconciliation_report.py` versions a
+comparison summary and byte hashes supplied by the caller. It explicitly records
+that the bytes were not bound to the comparison, source, independence, and platform
+were not verified, and complete coverage was not proved. Hashes are labeled
+unverified. The state is always `COVERAGE_PARTIAL`; this object does not change
+the v1 coverage contract and is not evidence of origin, authenticated integrity,
+or operational approval.
 
-A suíte desse relatório roda no job existente `security-foundations`. Isso valida
-o comportamento local do resumo, não integra o relatório aos gates de cobertura.
-Para concluir as fases ainda é necessário integrar o pacote de evidências
-assinado existente, definir contrato e migração
-revisados, executar testes negativos de ponta a ponta e definir retenção e gates.
-Nenhuma dessas garantias é inferida de um objeto ou booleano fornecido pelo chamador.
+The report's suite runs in the existing `security-foundations` job. This validates
+the summary's local behavior; it does not integrate the report into coverage gates.
+Completing the phases still requires integration with the existing signed evidence
+package, a reviewed contract and migration, end-to-end negative tests, and defined
+retention and gates. None of those guarantees can be inferred from an object or
+boolean supplied by the caller.
 
-Um fluxo experimental, `oci_reconciliation_pipeline.py`, reconstrói a
-comparação a partir dos bytes das camadas e do SBOM, verificando o digest da
-configuração, plataforma `linux/amd64` e ordem dos DiffIDs. Sua saída tem schema
-próprio em `security/oci-reconciliation-report-v1.schema.json`, com estados fixos
-de origem e independência não verificadas e lacunas obrigatórias. O schema não
-prova assinaturas nem autenticidade; o manifesto, distro e produtor permanecem
-responsabilidade de fontes independentes. O fluxo é testado no job de segurança,
-mas não publica evidências nem modifica gates ou o contrato de cobertura v1.
+An experimental flow, `oci_reconciliation_pipeline.py`, reconstructs the
+comparison from layer and SBOM bytes, verifying the configuration digest,
+`linux/amd64` platform, and DiffID order. Its output has its own schema in
+`security/oci-reconciliation-report-v1.schema.json`, with fixed unverified-source
+and unverified-independence states and mandatory gaps. The schema does not prove
+signatures or authenticity; independent sources remain responsible for the
+manifest, distribution, and producer. The flow is tested in the security job,
+but publishes no evidence and changes neither gates nor the v1 coverage contract.
 
-`compare_signed_image` verifica assinaturas Cosign dos bytes exatos do manifesto
-OCI direto e do SBOM, usando chave, política e hash de política fixados fora do
-pacote. Confere os descritores contra configuração e camadas e verifica os
-DiffIDs e a plataforma. As assinaturas exigidas são bundles separados para esses
-dois blobs; os artefatos históricos assinados de F3C.3.2 usam outro empacotamento
-e ainda não estão integrados a essa função. A assinatura prova autorização da
-chave sobre bytes, não independência, identidade do builder ou completude. Os
-testes locais dessa orquestração substituem o verificador criptográfico por mock;
-validação real com Cosign e chaves descartáveis continua pendente.
+`compare_signed_image` verifies Cosign signatures over the exact bytes of the
+direct OCI manifest and SBOM, using a key, policy, and policy hash pinned outside
+the package. It checks descriptors against configuration and layers and verifies
+DiffIDs and platform. Separate bundles are required for the signatures on those
+two blobs; the signed historical F3C.3.2 artifacts use different packaging and
+are not yet integrated with this function. A signature proves key authorization
+over bytes, not independence, builder identity, or completeness. Local tests of
+this orchestration mock the cryptographic verifier; real validation with Cosign
+and disposable keys remains pending.
 
-Inspeção somente leitura dos arquivos OCI históricos da execução 41238810850:
-as maiores entradas candidatas têm 100.435.968 bytes (backend) e 41.925.632
-bytes (frontend), acima do limite de 16 MiB por camada. Entre blobs candidatos
-USTAR de até 16 MiB, o leitor aceitou 8 no backend e 8 no frontend; rejeitou 1
-por tipo TAR não suportado e 3 por caminho não normalizado, respectivamente. Isso
-não valida a imagem inteira ou a origem dos arquivos, nem substitui o teste
-integrado com imagens e assinaturas autenticadas.
+Read-only inspection of historical OCI files from run 41238810850: the largest
+candidate entries are 100.435.968 bytes (backend) and 41.925.632 bytes
+(frontend), above the 16 MiB per-layer limit. Among candidate USTAR blobs up to
+16 MiB, the reader accepted 8 in the backend and 8 in the frontend; it rejected
+1 for an unsupported TAR type and 3 for non-normalized paths, respectively. This
+does not validate the whole image or the files' origin, or replace integrated
+testing with authenticated images and signatures.
 
-O job `security-foundations` também executa `validate_signed_oci_fixture.py` em
-runner GitHub hospedado. A rotina cria uma imagem OCI mínima em memória e duas
-chaves temporárias, instala Cosign a partir do pin existente e testa as assinaturas
-de manifesto e SBOM, além de sete casos negativos. Nenhuma chave ou assinatura é
-publicada; o diretório temporário é removido ao final. Esse teste não modifica os
-gates de cobertura e não substitui a integração do pacote F3C.3.2 ou a validação de
-imagens reais. O resultado dessa execução deve ser consultado no Actions do PR.
+The `security-foundations` job also runs `validate_signed_oci_fixture.py` on a
+GitHub-hosted runner. The routine creates a minimal OCI image in memory and two
+temporary keys, installs Cosign from the existing pin, and tests manifest and
+SBOM signatures plus seven negative cases. No key or signature is published;
+the temporary directory is removed at the end. This test does not change
+coverage gates or replace F3C.3.2 package integration or real-image validation.
+The result of that run should be checked in the PR's Actions page.

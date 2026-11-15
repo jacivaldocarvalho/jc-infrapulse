@@ -1,78 +1,78 @@
-# Sprint 06 — handoff F3C.3.2 e F3C.4
+# Sprint 06 — F3C.3.2 and F3C.4 handoff
 
-## Atualização de retomada — 2026-11-14
+## Resumption update — 2026-11-14
 
-- PRs #11–#14 foram confirmados como mesclados; os quatro CI pós-merge em `develop` concluíram com sucesso. O run do PR #14 é [43645063533](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/43645063533).
-- F3C.4.2B–D estão concluídas. O contrato v1 e os testes negativos mantêm `COVERAGE_PARTIAL` e rejeitam `COMPLETE` sem prova independente.
-- Nesta retomada, o leitor passou a aceitar os cabeçalhos GNU e PAX local `path`/`linkpath` observados nos archives reais, com limites de 128 MiB por camada, 256 MiB agregados, 1 MiB por cabeçalho PAX e 100.000 entradas. Gzip, PAX global e extensões não observadas continuam rejeitados.
-- Os dois archives preservados do run `41238810850` foram verificados pelos hashes do handoff, IDs dos configs e DiffIDs; o parser leu todas as 24 camadas. Detalhes e limites em [integração F3C.3.2](sprint06-f3c3-reconciliation.md).
-- A integração direta do verificador F3C.3.2 com a reconciliação está no [PR #15](https://github.com/jacivaldocarvalho/jc-infrapulse/pull/15); o CI do PR [43655776080](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/43655776080) passou, e falta o merge em `develop`. O pacote histórico não preservou os bundles Cosign descartáveis; o CI testa assinaturas reais com fixture descartável.
-- Retenção atual: handoff de imagens 1 dia, relatórios sanitizados 7 dias e evidência CI sem assinatura 30 dias. Os bundles temporários F3C.3.2 não são publicados.
+- PRs #11–#14 were confirmed merged; all four post-merge CI runs on `develop` completed successfully. The PR #14 run is [43645063533](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/43645063533).
+- F3C.4.2B–D are complete. The v1 contract and negative tests retain `COVERAGE_PARTIAL` and reject `COMPLETE` without independent proof.
+- In this resumption, the reader began accepting the GNU and local PAX `path`/`linkpath` headers observed in real archives, with limits of 128 MiB per layer, 256 MiB aggregate, 1 MiB per PAX header, and 100.000 entries. Gzip, global PAX, and unobserved extensions remain rejected.
+- The two preserved archives from run `41238810850` were verified against handoff hashes, config IDs, and DiffIDs; the parser read all 24 layers. Details and limits are in [F3C.3.2 integration](sprint06-f3c3-reconciliation.md).
+- Direct integration of the F3C.3.2 verifier with reconciliation is in [PR #15](https://github.com/jacivaldocarvalho/jc-infrapulse/pull/15); its CI run [43655776080](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/43655776080) passed, and the merge into `develop` remains pending. The historical package did not retain disposable Cosign bundles; CI tests real signatures with a disposable fixture.
+- Current retention: image handoff 1 day, sanitized reports 7 days, and unsigned CI evidence 30 days. Temporary F3C.3.2 bundles are not published.
 
-**Registro em 2026-11-01, UTC.** Reconfirmar referências e retenção na retomada; os estados remotos podem mudar.
+**Recorded on 2026-11-01, UTC.** Reconfirm references and retention on resumption; remote states may change.
 
-## Resumo executivo
+## Executive summary
 
-- F3C.3.2 teve validação real aprovada e foi sincronizada para `develop` pelo [PR #9](https://github.com/jacivaldocarvalho/jc-infrapulse/pull/9), merge `de6f39aee8addb1d99fd161f96e6dae222ad56fd`.
-- O [CI pós-merge 41353516492](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41353516492) terminou com sucesso, inclusive `security-foundations` e `ci-required`.
-- F3C.4.1A e F3C.4.2A–D estão concluídas. F3C.4.3–4.4 seguem os critérios de cobertura e integração descritos abaixo e na atualização de retomada.
-- A cobertura das imagens continua `COVERAGE_PARTIAL`; nenhuma igualdade, assinatura ou leitura bem-sucedida promove cobertura automaticamente.
+- F3C.3.2 passed real validation and was synchronized to `develop` through [PR #9](https://github.com/jacivaldocarvalho/jc-infrapulse/pull/9), merge `de6f39aee8addb1d99fd161f96e6dae222ad56fd`.
+- [Post-merge CI 41353516492](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41353516492) completed successfully, including `security-foundations` and `ci-required`.
+- F3C.4.1A and F3C.4.2A–D are complete. F3C.4.3–4.4 follow the coverage and integration criteria below and in the resumption update.
+- Image coverage remains `COVERAGE_PARTIAL`; no match, signature, or successful read automatically promotes coverage.
 
-## Estado por fase
+## Status by phase
 
-| Fase | Estado e evidência |
+| Phase | Status and evidence |
 | --- | --- |
-| F3C.3.2 | Concluída: [run real 41344302188, attempt 1](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41344302188), `main` `350a404019ae1667a9e5805fe6b225b461401f7d`; integração em `develop` pelo PR #9. |
-| F3C.4.1A | Concluída: contrato v1 no commit `ff07878b53ab0bb10cd05fbf9c04abb1675fa1c1`; 13 testes. |
-| F3C.4.2A | Concluída: leitor virtual USTAR/GNU e PAX restrito; limites ampliados validados com as imagens preservadas e regressões negativas no job obrigatório. |
-| F3C.4.2B–D | Concluídas pelos PRs #11–#13 em 2026-11-14; CI pós-merge dos três PRs passou. |
-| F3C.4.3 | Contrato v1 e gates negativos integrados; cobertura permanece `COVERAGE_PARTIAL`. |
-| F3C.4.4 | PR #14 integrou verificação de manifesto/SBOM assinados à reconciliação. A ligação aos bundles F3C.3.2 está no PR #15, com CI aprovado; aguarda merge. |
+| F3C.3.2 | Complete: [real run 41344302188, attempt 1](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41344302188), `main` `350a404019ae1667a9e5805fe6b225b461401f7d`; integrated into `develop` through PR #9. |
+| F3C.4.1A | Complete: v1 contract in commit `ff07878b53ab0bb10cd05fbf9c04abb1675fa1c1`; 13 tests. |
+| F3C.4.2A | Complete: virtual USTAR/GNU reader and restricted PAX; expanded limits validated with preserved images and negative regressions in the required job. |
+| F3C.4.2B–D | Completed through PRs #11–#13 on 2026-11-14; post-merge CI for all three PRs passed. |
+| F3C.4.3 | v1 contract and negative gates integrated; coverage remains `COVERAGE_PARTIAL`. |
+| F3C.4.4 | PR #14 integrated signed manifest/SBOM verification with reconciliation. The link to F3C.3.2 bundles is in PR #15, with passing CI; awaiting merge. |
 
-## Arquitetura e decisões de segurança
+## Architecture and security decisions
 
-- A evidência F3C.2 cobre locks Python/npm e apenas as imagens `backend-image` e `nginx-image`. A comparação F3B.1 regenera o inventário com Trivy fixado e compara componentes e relações. Isso não mede a completude da detecção. Ver [F3C.2](../../ci-evidence-f3c2.md) e [F3B.1](../../provenance-f3b1.md).
-- Exigir IDs completos e nomes lógicos de fontes confiáveis independentes. Um ID lido apenas de um archive ou manifesto não assinado comprova consistência, não autenticidade da origem. Preservar hashes, pinagens, comparação integral dos statements e fail-closed.
-- Assinaturas Cosign e política de confiança verificadas são evidências de integridade e de autorização da chave, não de builder autenticado, geração reproduzível ou nível SLSA. A validação real usou chaves descartáveis; não usar chaves operacionais em testes.
-- Os archives originais e canonicalizados têm hashes distintos. O [canonicalizer](../../oci-canonical-exporter.md) suporta perfis OCI restritos, preserva os registros alcançáveis e remove somente metadados legados reconhecidos; preservar o original e o recibo da transformação, sem fallback silencioso.
-- O workflow F3C.3.2 integrado mantém `workflow_dispatch` e job condicionado à `main`; o validador é pinado em `3daeae2b308896edea3a88a0a43e1063d06c1768`. Sua exceção de `actions: read` é limitada ao caminho exato, gatilho manual, único job e condição de `main`. Consulte o [workflow integrado](https://github.com/jacivaldocarvalho/jc-infrapulse/blob/de6f39aee8addb1d99fd161f96e6dae222ad56fd/.github/workflows/f3c3-real-validation.yml).
-- O [contrato v1](../../../security/image-coverage-v1.schema.json) valida estrutura; [Python](../../../scripts/image_coverage_contract.py) aplica estados e IDs esperados, rejeitando `COMPLETE`. Ele não verifica bytes nem autentica as evidências. Não confundir os estados do contrato com o `COVERAGE_PARTIAL` existente.
-- O [leitor virtual](../../../scripts/oci_virtual_layers.py) recebe bytes já alocados e descritores que o chamador deve verificar independentemente. Limites: 64 camadas, 128 MiB/camada, 256 MiB totais, 100.000 entradas e 1 MiB por cabeçalho PAX. Aceita USTAR, cabeçalhos GNU observados e PAX local somente para `path`/`linkpath`; mantém gzip, PAX global e extensões desconhecidas rejeitados. Symlinks são registrados sem resolução no host; hardlinks precisam apontar para arquivo regular já conhecido. A reconstrução permanece virtual e `COVERAGE_PARTIAL`.
+- F3C.2 evidence covers Python/npm locks and only the `backend-image` and `nginx-image` images. F3B.1 comparison regenerates the inventory with pinned Trivy and compares components and relationships. This does not measure detection completeness. See [F3C.2](../../ci-evidence-f3c2.md) and [F3B.1](../../provenance-f3b1.md).
+- Require complete IDs and logical names from independent trusted sources. An ID read only from an unsigned archive or manifest demonstrates consistency, not source authenticity. Preserve hashes, pins, full statement comparison, and fail-closed behavior.
+- Verified Cosign signatures and trust policy are evidence of integrity and key authorization, not of an authenticated builder, reproducible generation, or a SLSA level. Real validation used disposable keys; do not use operational keys in tests.
+- Original and canonicalized archives have different hashes. The [canonicalizer](../../oci-canonical-exporter.md) supports restricted OCI profiles, preserves reachable records, and removes only recognized legacy metadata; retain the original and transformation receipt without silent fallback.
+- The integrated F3C.3.2 workflow retains `workflow_dispatch` and a job conditioned on `main`; the validator is pinned to `3daeae2b308896edea3a88a0a43e1063d06c1768`. Its `actions: read` exception is limited to the exact path, manual trigger, single job, and `main` condition. See the [integrated workflow](https://github.com/jacivaldocarvalho/jc-infrapulse/blob/de6f39aee8addb1d99fd161f96e6dae222ad56fd/.github/workflows/f3c3-real-validation.yml).
+- The [v1 contract](../../../security/image-coverage-v1.schema.json) validates structure; [Python](../../../scripts/image_coverage_contract.py) enforces expected states and IDs and rejects `COMPLETE`. It does not verify bytes or authenticate evidence. Do not confuse contract states with the existing `COVERAGE_PARTIAL`.
+- The [virtual reader](../../../scripts/oci_virtual_layers.py) receives already allocated bytes and descriptors that the caller must independently verify. Limits: 64 layers, 128 MiB/layer, 256 MiB total, 100.000 entries, and 1 MiB per PAX header. It accepts USTAR, observed GNU headers, and local PAX only for `path`/`linkpath`; gzip, global PAX, and unknown extensions remain rejected. Symlinks are recorded without host resolution; hardlinks must point to an already known regular file. Reconstruction remains virtual and `COVERAGE_PARTIAL`.
 
-## Evidências e limitações
+## Evidence and limitations
 
-- No run real, passaram as oito fases `checkout`, `tools`, `extract`, `manifests`, `canonicalize`, `docker_import`, `sign_verify` e `negative_checks`; proveniências Python, npm, backend e nginx passaram na assinatura e verificação. Cosign v3.1.3 foi verificado contra o SHA-256 fixado. Passaram testes negativos de payload, bundle, chave, fingerprint e SBOM; cleanup concluiu.
-- Os três ZIPs originais do [run 41238810850, attempt 1](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41238810850), commit `9f237be45ccd6e7977f50f85d37ebcc32d81a2bb`, foram preservados com manifesto em `/home/juninhocarvalho/projetos/infrapulse-evidence-archive/41238810850-attempt-1/`. Diretório `700`, arquivos `600`; hashes e integridade ZIP foram verificados. O manifesto distingue os originais de derivados. Esses hashes não autenticam independentemente o produtor; o armazenamento é local, fora do Git.
-- O artifact remoto de imagens deixou de aparecer na listagem após a expiração prevista em 2026-11-01 20:28:10 UTC. A auditoria expira em 2026-11-07 20:29:40 UTC e `ci-evidence` em 2026-11-30 20:29:15 UTC; confirmar retenção antes de depender deles.
-- O CI F3C.4 anterior [41349121375](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41349121375) passou, com 13 testes do contrato e 10 do parser. O CI pós-merge também passou. Aviso de Node.js 20 nas actions é dívida técnica separada; não alterar pins sem revisão.
-- Em 2026-11-14, os dois archives Docker preservados do run `41238810850` foram validados sem carregá-los no daemon: hashes do handoff e IDs de configuração conferidos; 12 camadas e DiffIDs por imagem; parser virtual percorreu 224.294.912 bytes/11.779 entradas do backend e 56.756.736 bytes/2.291 entradas do nginx. Os archives continham cabeçalhos GNU e PAX `path`/`linkpath`. Isso valida esse par de imagens/plataforma e os formatos observados; não demonstra completude de SBOM nem autentica o builder.
+- In the real run, all eight phases passed: `checkout`, `tools`, `extract`, `manifests`, `canonicalize`, `docker_import`, `sign_verify`, and `negative_checks`; Python, npm, backend, and nginx provenance passed signing and verification. Cosign v3.1.3 was checked against its pinned SHA-256. Negative payload, bundle, key, fingerprint, and SBOM tests passed; cleanup completed.
+- The three original ZIPs from [run 41238810850, attempt 1](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41238810850), commit `9f237be45ccd6e7977f50f85d37ebcc32d81a2bb`, were preserved with a manifest in `/home/juninhocarvalho/projetos/infrapulse-evidence-archive/41238810850-attempt-1/`. Directory `700`, files `600`; hashes and ZIP integrity were verified. The manifest distinguishes originals from derivatives. Those hashes do not independently authenticate the producer; storage is local, outside Git.
+- The remote image artifact stopped appearing in the list after its expected expiration on 2026-11-01 20:28:10 UTC. The audit expires on 2026-11-07 20:29:40 UTC and `ci-evidence` on 2026-11-30 20:29:15 UTC; confirm retention before relying on them.
+- The earlier F3C.4 CI [41349121375](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41349121375) passed, with 13 contract tests and 10 parser tests. Post-merge CI also passed. The Node.js 20 warning in actions is separate technical debt; do not change pins without review.
+- On 2026-11-14, the two preserved Docker archives from run `41238810850` were validated without loading them into the daemon: handoff hashes and configuration IDs matched; 12 layers and DiffIDs per image; the virtual parser traversed 224.294.912 bytes/11.779 backend entries and 56.756.736 bytes/2.291 nginx entries. The archives contained GNU and PAX `path`/`linkpath` headers. This validates that image/platform pair and observed formats; it does not demonstrate SBOM completeness or authenticate the builder.
 
-## Snapshot histórico de worktrees, referências e Entire — 2026-11-01
+## Historical worktree, reference, and Entire snapshot — 2026-11-01
 
-- Worktree principal `/home/juninhocarvalho/projects/jc-infrapulse`: branch `develop`, HEAD local `86b80d70f5f7b3966de53994ae9a3924b525abee`. Na consulta, `origin/develop` local ainda apontava para esse SHA, enquanto `develop` remoto apontava para `de6f39a`. Não presumir que a referência local está atualizada.
-- Há cinco modificações rastreadas preexistentes: `scripts/ci_evidence_signature.py`, `scripts/provenance.py`, `scripts/provenance_signature.py`, `scripts/test_ci_evidence_signature.py` e `scripts/test_provenance.py`. As versões na worktree coincidiram com o conteúdo correspondente do commit `3daeae2`; não são commits de `develop`.
-- Há quatro arquivos não rastreados preexistentes: `.github/workflows/f3c3-real-validation.yml`, `docs/f3c3-real-validation.md`, `scripts/ci_f3c3_validation.py` e `scripts/test_ci_f3c3_validation.py`. Suas versões locais diferem das integradas na main. Uma atualização direta pode colidir com eles.
-- Worktree de integração `/tmp/infrapulse-f3c3-sync-develop`: branch `fix/f3c3-sync-develop`, HEAD `2945962f5b9ee50982a3c8e1c1d6ec3627d6a9fd`, limpa no Git; `frontend/node_modules` está ignorado e foi instalado para testes. A branch remota foi preservada. Existem outras worktrees antigas; não removê-las sem revisão e autorização.
-- Entire habilitado; na última consulta, nenhum checkpoint aguardava envio. `Entire Gates` do PR #9 apareceu `SUCCESS` no preflight, depois `FAILURE` com “1 commit behind” e posteriormente `NEUTRAL`, sem trail aberto. O head do PR é ancestral direto do merge, mas a causa temporal da mudança do check não foi comprovada. O doctor também reportou sessão anterior encerrada `01a19295-64a8-7eb2-a0b0-e905463e0fc1`, com dois turnos não condensados; nenhum reparo foi autorizado.
+- Main worktree `/home/juninhocarvalho/projects/jc-infrapulse`: branch `develop`, local HEAD `86b80d70f5f7b3966de53994ae9a3924b525abee`. At the time of the query, local `origin/develop` still pointed to this SHA, while remote `develop` pointed to `de6f39a`. Do not assume the local reference is current.
+- Five tracked modifications predated this work: `scripts/ci_evidence_signature.py`, `scripts/provenance.py`, `scripts/provenance_signature.py`, `scripts/test_ci_evidence_signature.py`, and `scripts/test_provenance.py`. The worktree versions matched the corresponding content in commit `3daeae2`; they were not `develop` commits.
+- Four untracked files predated this work: `.github/workflows/f3c3-real-validation.yml`, `docs/f3c3-real-validation.md`, `scripts/ci_f3c3_validation.py`, and `scripts/test_ci_f3c3_validation.py`. Their local versions differed from those integrated into main. A direct update could conflict with them.
+- Integration worktree `/tmp/infrapulse-f3c3-sync-develop`: branch `fix/f3c3-sync-develop`, HEAD `2945962f5b9ee50982a3c8e1c1d6ec3627d6a9fd`, clean in Git; `frontend/node_modules` is ignored and was installed for tests. The remote branch was preserved. Other old worktrees exist; do not remove them without review and authorization.
+- Entire was enabled; at the last query, no checkpoint was awaiting upload. `Entire Gates` for PR #9 showed `SUCCESS` during preflight, then `FAILURE` with “1 commit behind,” and later `NEUTRAL`, without an open trail. The PR head is a direct ancestor of the merge, but the timing-related cause of the check change was not established. Doctor also reported a closed prior session `01a19295-64a8-7eb2-a0b0-e905463e0fc1` with two uncompacted turns; no repair was authorized.
 
-## Fechamento restante
+## Remaining closure
 
-1. **F3C.4.2B–D:** concluídas e mescladas nos PRs #11–#13; os respectivos CIs pós-merge passaram.
-2. **F3C.4.3:** contrato e regressões negativas estão no CI obrigatório. A política conserva `COVERAGE_PARTIAL` porque os dados não provam completude.
-3. **F3C.4.4:** PR #14 integrou verificação de manifest/SBOM assinados. A branch desta retomada adiciona o vínculo com os bundles F3C.3.2 completos e cobre o snapshot de bytes verificados. Falta publicar essa branch, abrir/revisar o PR e obter CI pós-merge.
-4. **Bundles históricos:** os bundles Cosign usados no run real não foram preservados; não é possível repetir a assinatura histórica. A CI existente valida assinaturas reais com chaves descartáveis e cenários negativos. O resultado das imagens reais preservadas valida parser e inventário, mas não autentica o builder.
-5. **Retenção operacional:** handoff de imagem 1 dia, evidência CI sem assinatura 30 dias e relatórios sanitizados 7 dias. Bundles descartáveis não são publicados. Essa política limita a janela para repetir validações que dependem do handoff.
+1. **F3C.4.2B–D:** completed and merged in PRs #11–#13; their post-merge CI runs passed.
+2. **F3C.4.3:** the contract and negative regressions are in required CI. Policy retains `COVERAGE_PARTIAL` because the data does not prove completeness.
+3. **F3C.4.4:** PR #14 integrated signed manifest/SBOM verification. The branch in this resumption adds the link to complete F3C.3.2 bundles and covers the verified byte snapshot. Publishing the branch, opening and reviewing the PR, and obtaining post-merge CI remain pending.
+4. **Historical bundles:** Cosign bundles used in the real run were not retained, so the historical signature cannot be repeated. Existing CI validates real signatures with disposable keys and negative scenarios. Results from preserved real images validate the parser and inventory but do not authenticate the builder.
+5. **Operational retention:** image handoff 1 day, unsigned CI evidence 30 days, and sanitized reports 7 days. Disposable bundles are not published. This policy limits the window for repeating validations that depend on the handoff.
 
-**Critério de encerramento:** integrar o commit local de fechamento por PR e confirmar sucesso do CI pós-merge. Não promover cobertura para `COMPLETE` sem evidência independente adicional.
+**Closure criterion:** integrate the local closure commit through a PR and confirm post-merge CI success. Do not promote coverage to `COMPLETE` without additional independent evidence.
 
-## Plano de retomada original — supersedido pela atualização de 2026-11-14
+## Original resumption plan — superseded by the 2026-11-14 update
 
-1. Reler `AGENTS.md` e `.entire/agent-guide.md`; consultar o estado atual antes de pressupor que este registro continua atualizado.
-2. Examinar a worktree principal e suas alterações sem descartá-las. Para sincronizar com `develop` remoto, primeiro planejar uma worktree/branch separada e comparar os quatro arquivos não rastreados e cinco modificados; não fazer pull direto sobre a worktree atual. Obter autorização para atualização de refs ou criação de worktree.
-3. Revisar o escopo e a semântica OCI de 4.2B com exemplos adversariais. Implementar em pequenos incrementos somente após autorização; manter a worktree original e evidências privadas preservadas.
-4. Revisar a sessão Entire não condensada em tarefa separada. Não executar `entire doctor --force`, instalar/desabilitar hooks ou alterar checkpoints sem autorização específica.
+1. Reread `AGENTS.md` and `.entire/agent-guide.md`; check current state before assuming this record is still up to date.
+2. Inspect the main worktree and its changes without discarding them. To synchronize with remote `develop`, first plan a separate worktree/branch and compare the four untracked and five modified files; do not pull directly into the current worktree. Obtain authorization before updating refs or creating a worktree.
+3. Review 4.2B scope and OCI semantics with adversarial examples. Implement in small increments only after authorization; preserve the original worktree and private evidence.
+4. Review the uncompacted Entire session in a separate task. Do not run `entire doctor --force`, install or disable hooks, or alter checkpoints without specific authorization.
 
-Diagnósticos de leitura sugeridos, a partir da worktree escolhida:
+Suggested read-only diagnostics from the chosen worktree:
 
 ```sh
 git status --short --branch
@@ -84,7 +84,7 @@ entire status
 entire checkpoint list --outgoing
 ```
 
-Validação local sugerida **na worktree de integração**, após confirmar dependências e sem Docker local:
+Suggested local validation **in the integration worktree**, after confirming dependencies and without local Docker:
 
 ```sh
 python3 -B scripts/test_ci_f3c3_validation.py
@@ -95,15 +95,15 @@ python3 -B scripts/test_oci_virtual_layers.py
 git diff --check
 ```
 
-Os testes de políticas usam `frontend/node_modules/js-yaml` na versão do lock; uma nova worktree pode precisar de instalação isolada, sem lifecycle scripts. Testes podem criar arquivos temporários. Confirmar ferramentas disponíveis e rodar Ruff e actionlint quando aplicável.
+Policy tests use `frontend/node_modules/js-yaml` at the locked version; a new worktree may need an isolated installation without lifecycle scripts. Tests may create temporary files. Confirm available tools and run Ruff and actionlint where applicable.
 
-## Critérios gerais de aprovação e riscos
+## General approval criteria and risks
 
-- Preservar CI obrigatório, permissions mínimas, pins de actions/ferramentas e os controles F3B.1/F3C.3.2. Alterações de política devem ser específicas e ter regressões positivas e negativas.
-- Cobertura deve declarar universo, plataforma, fontes independentes, exclusões e lacunas. `COMPLETE` só pode ser considerado após prova independente para escopo limitado e revisão do contrato; sucesso do Trivy ou comparação com ele mesmo não bastam.
-- Falhas de parser, identidades, hashes, limites, ferramentas ou formatos não suportados não podem ser convertidas em sucesso. Testar caminhos, colisões, TAR ambíguo, symlinks, hardlinks, whiteouts e limites antes de usar dados reais.
-- Não executar pull, push, commit, merge, rebase, reset, stash, Docker local, dispatch, publicação de artifacts, limpeza de worktrees ou operações manuais Entire sem autorização aplicável. Nunca usar chaves operacionais em testes.
+- Preserve required CI, minimum permissions, action/tool pins, and F3B.1/F3C.3.2 controls. Policy changes should be specific and have positive and negative regression cases.
+- Coverage must declare its universe, platform, independent sources, exclusions, and gaps. `COMPLETE` can be considered only after independent proof for a bounded scope and contract review; Trivy success or self-comparison is insufficient.
+- Parser, identity, hash, limit, tool, or unsupported-format failures must not be converted into success. Test paths, collisions, ambiguous TAR, symlinks, hardlinks, whiteouts, and limits before using real data.
+- Do not run pull, push, commit, merge, rebase, reset, stash, local Docker, dispatch, artifact publication, worktree cleanup, or manual Entire operations without applicable authorization. Never use operational keys in tests.
 
-## Prompt inicial sugerido
+## Suggested initial prompt
 
 > Leia `AGENTS.md`, `.entire/agent-guide.md` e `docs/sprint06-handoff.md`. Confirme em modo somente leitura as referências remotas, as duas worktrees, as alterações preexistentes e o estado Entire. Proponha um plano isolado para F3C.4.2B com whiteouts, diretórios opacos e hardlinks, mantendo `COVERAGE_PARTIAL`. Não sincronize, implemente, execute Docker nem altere checkpoints até receber autorização explícita.

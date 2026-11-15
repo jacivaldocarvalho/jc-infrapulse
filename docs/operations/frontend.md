@@ -1,12 +1,12 @@
 # Frontend Dashboard — Sprint 05
 
-## Desenvolvimento local
+## Local development
 
-Requisitos: Node.js 24 (>=24.15), npm, Python 3.12+ com o backend instalado segundo
-`backend/requirements.lock`. A API pode continuar no container existente; gerar os
-tipos não exige iniciar API, worker ou banco e não lê credenciais do backend.
+Requirements: Node.js 24 (>=24.15), npm, and Python 3.12+ with the backend installed according to
+`backend/requirements.lock`. The API may remain in an existing container; generating
+types does not require starting the API, worker, or database and does not read backend credentials.
 
-A partir da raiz:
+From the repository root:
 
 ```bash
 npm --prefix frontend ci
@@ -14,23 +14,23 @@ npm --prefix frontend run generate:api
 npm --prefix frontend run dev
 ```
 
-Abra `http://127.0.0.1:5173`. O proxy de desenvolvimento encaminha `/api/v1` à API
-em `http://127.0.0.1:8000`. Para outro destino local, defina `API_PROXY_TARGET` no
-ambiente do processo Vite. Essa configuração é exclusiva do servidor Node e não
-é exposta no bundle. O cliente do navegador usa sempre a própria origem.
+Open `http://127.0.0.1:5173`. The development proxy forwards `/api/v1` to the API
+at `http://127.0.0.1:8000`. For another local target, set `API_PROXY_TARGET` in
+the Vite process environment. This configuration belongs only to the Node server
+and is not exposed in the bundle. The browser client always uses its own origin.
 
-O gerador usa `backend/.venv/bin/python`, quando disponível, ou `python3`. A variável
-`PYTHON` pode selecionar explicitamente um interpretador com o backend instalado.
-`OPENAPI_SCHEMA_FILE` permite consumir um contrato exportado pelo estágio Python
-do Docker. Nunca substitua esse arquivo por um schema escrito manualmente.
+The generator uses `backend/.venv/bin/python` when available, or `python3`. The
+`PYTHON` variable can explicitly select an interpreter with the backend installed.
+`OPENAPI_SCHEMA_FILE` allows consumption of a contract exported by the Docker
+Python stage. Never replace that file with a manually written schema.
 
-## Contratos e qualidade
+## Contracts and quality
 
-`scripts/export-openapi.py` importa a aplicação atual e chama `app.openapi()`, sem
-lifespan ou sessão de banco. `frontend/scripts/generate-api.mjs` usa
-`openapi-typescript` e grava `src/shared/api/generated.d.ts`, ignorado pelo Git.
-Não existe cópia manual de DTOs do backend. As funções de formulário representam
-estado da interface e são convertidas aos payloads gerados antes do envio.
+`scripts/export-openapi.py` imports the current application and calls `app.openapi()`
+without a lifespan or database session. `frontend/scripts/generate-api.mjs` uses
+`openapi-typescript` and writes `src/shared/api/generated.d.ts`, which Git ignores.
+There is no manual copy of backend DTOs. Form functions represent interface state
+and are converted to generated payloads before submission.
 
 ```bash
 npm --prefix frontend run generate:api
@@ -41,82 +41,80 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-O build sempre regenera os tipos antes da checagem TypeScript. As dependências
-resolvidas ficam em `frontend/package-lock.json`; a instalação reproduzível usa
-`npm ci`. Vitest executa regras e testes de componentes com Testing Library e MSW.
+The build always regenerates types before TypeScript checking. Resolved dependencies
+are in `frontend/package-lock.json`; reproducible installation uses `npm ci`.
+Vitest runs rule and component tests with Testing Library and MSW.
 
-## Semântica da interface
+## Interface semantics
 
-- Inventário global: total, ativos e inativos, obtidos de `total` em três consultas
-  de listagem com `limit=1`. As chamadas não constituem um snapshot transacional.
-- UP/DOWN/sem dados: contagens exclusivas dos serviços da página visível. Serviços
-  com consulta pendente ou falha de atualização são identificados separadamente.
-- UP corresponde apenas ao enum `UP`. Todos os demais resultados técnicos são
-  apresentados como DOWN, preservando a causa original no histórico/detalhe.
-- Inativo é uma propriedade do cadastro, independente do último resultado.
-- Erros de consulta não fabricam resultados nem removem o último dado recebido;
-  a interface informa que esse dado está desatualizado.
-- `/status` informa o último check geral. Métricas e histórico têm uma janela
-  explícita `[start, end)`, com no máximo 90 dias. Datas são enviadas em UTC e
-  apresentadas no horário local do navegador, indicado nos rótulos.
-- Disponibilidade representa proporção de checks UP, sem ponderação temporal.
-  Sem checks, disponibilidade e durações são ausentes, apresentadas como `—`.
-- Média e p95 incluem todas as durações não nulas, inclusive checks com falha.
-  O p95 do período vem diretamente de `/metrics` para a janela completa.
-- Gráficos consultam 12 subperíodos contíguos, com no máximo quatro requisições
-  de métricas simultâneas em toda a aplicação. Percentis nunca são combinados.
-  As lacunas dos gráficos não são preenchidas com zero. Há tabela equivalente.
+- Global inventory: total, active, and inactive counts obtained from `total` in
+  three list queries with `limit=1`. These calls do not form a transactional snapshot.
+- UP/DOWN/no data: exclusive counts for services on the visible page. Services
+  with pending queries or failed refreshes are identified separately.
+- UP corresponds only to the `UP` enum value. All other technical results appear
+  as DOWN, with the original cause retained in history and details.
+- Inactive is a registry property independent of the latest result.
+- Query errors neither fabricate results nor remove the latest received data;
+  the interface identifies that data as stale.
+- `/status` reports the latest overall check. Metrics and history use an explicit
+  `[start, end)` window of at most 90 days. Dates are sent in UTC and displayed
+  in the browser's local time zone, which the labels indicate.
+- Availability is the share of UP checks, without time weighting. With no checks,
+  availability and durations are absent and displayed as `—`.
+- Mean and p95 include all non-null durations, including failed checks. The
+  period-wide p95 comes directly from `/metrics` for the complete window.
+- Charts query 12 contiguous subperiods, with at most four simultaneous metrics
+  requests across the application. Percentiles are never combined. Chart gaps
+  are not filled with zero. An equivalent table is available.
 
-## Atualização e cache
+## Refresh and cache
 
-Listagem e inventário global atualizam a cada 30 segundos. Estados são consultados
-somente para os serviços visíveis; serviços inativos não têm polling de estado.
-Há opção para pausar a atualização. A biblioteca pausa polling em abas ocultas e
-as requisições recebem o AbortSignal da consulta. A fila compartilhada remove
-trabalho cancelado antes de acessar a rede.
+Lists and global inventory refresh every 30 seconds. Status is queried only for
+visible services; inactive services are not polled for status. Refresh can be
+paused. The library pauses polling in hidden tabs, and requests receive the
+query's AbortSignal. The shared queue removes canceled work before network access.
 
-Métricas, histórico e gráficos usam janelas fixas, sem polling ou refetch por foco
-/reconexão. O botão “Atualizar período até agora” avança explicitamente a janela.
-O histórico fica em cache enquanto retido (cinco minutos após deixar de ser usado).
-Persistências atrasadas podem alterar uma janela encerrada: a visão é uma consulta
-armazenada em cache, não uma garantia de imutabilidade do banco. Uma nova janela
-ou recarga do navegador obtém os dados atuais. Mutações invalidam os caches de
-serviços e monitoramento relacionados; exclusão remove caches do serviço excluído.
+Metrics, history, and charts use fixed windows, without polling or focus/reconnection
+refetch. The “Refresh period to now” button explicitly advances the window.
+History remains in cache for five minutes after its last use.
+Delayed persistence may change a closed window: this view is a cached query,
+not a guarantee of database immutability. A new window or browser reload fetches
+current data. Mutations invalidate related service and monitoring caches;
+deletion removes caches for the deleted service.
 
-A paginação usa offset. Checks novos podem deslocar resultados entre requisições;
-a janela fixa reduz deslocamentos causados pela passagem do tempo. O limite de
-`offset=10000` da API é respeitado; para dados além dele, reduza o período.
+Pagination uses offsets. New checks may shift results between requests; the fixed
+window reduces shifts caused by passing time. The API's `offset=10000` limit is
+respected; narrow the period to reach data beyond it.
 
-## Container e segurança
+## Container and security
 
-O Dockerfile usa estágios Python para exportar o OpenAPI, Node para gerar os tipos
-e compilar a SPA, e Nginx sem privilégios para servir o resultado. Python, Node,
-credenciais e variáveis de proxy não são necessários na imagem final.
+The Dockerfile uses Python stages to export OpenAPI, Node to generate types and
+compile the SPA, and unprivileged Nginx to serve the result. Python, Node,
+credentials, and proxy variables are unnecessary in the final image.
 
-O Compose principal adiciona somente `127.0.0.1:8080:8080` ao frontend. Ele participa
-apenas de `api_access`, sem rede do PostgreSQL ou telemetria. O filesystem é somente
-leitura, com `/tmp` efêmero e `no-new-privileges`. O endpoint `/healthz` pertence ao
-Nginx e verifica o servidor estático; não substitui o readiness do FastAPI.
+The main Compose stack adds only `127.0.0.1:8080:8080` for the frontend. It joins
+only `api_access`, without PostgreSQL or telemetry networks. Its filesystem is
+read-only, with ephemeral `/tmp` and `no-new-privileges`. The `/healthz` endpoint
+belongs to Nginx and checks the static server; it does not replace FastAPI readiness.
 
-O proxy permite exclusivamente a coleção de serviços, recurso por UUID e leituras
-de status/checks/metrics. Não encaminha `/health`, `/ready`, `/docs`, OpenAPI,
-listeners de métricas ou serviços operacionais. Métodos também são limitados por
-rota. As páginas da SPA usam fallback de `index.html`, permitindo navegação direta
-e reload. Cabeçalhos CSP, anti-frame, nosniff e referrer-policy são definidos pelo
-Nginx; logs JSON não incluem URL, query, corpo ou cabeçalhos.
+The proxy allows only the service collection, UUID resource, and status/checks/metrics
+reads. It does not forward `/health`, `/ready`, `/docs`, OpenAPI, metrics listeners,
+or operational services. Methods are also limited by route. SPA pages fall back to
+`index.html` for direct navigation and reloads. Nginx sets CSP, anti-frame,
+nosniff, and referrer-policy headers; JSON logs exclude URL, query, body, and headers.
 
-Após configurar as senhas locais conforme o README e aplicar as migrações:
+After setting local passwords as described in the README and applying migrations:
 
 ```bash
 docker compose --env-file backend/.env build frontend
 docker compose --env-file backend/.env up -d --wait frontend
 ```
 
-Essa operação pode iniciar dependências; durante a implementação da sprint ela
-não é executada no projeto de desenvolvimento existente. Não há autenticação na
-SPA ou na API nesta sprint; a publicação permanece restrita ao loopback.
+This operation may start dependencies; during sprint implementation it was not
+run against the existing development project. Neither the SPA nor API has
+authentication in this sprint; publication remains limited to loopback.
 
-## E2E isolado
+## Isolated E2E
 
 ```bash
 cd frontend
@@ -125,32 +123,33 @@ cd ..
 python3 scripts/validate-dashboard.py
 ```
 
-O script cria um projeto Compose com nome exclusivo, senhas efêmeras em memória,
-PostgreSQL em tmpfs, migrações reais, API, worker, destino HTTP controlado e Nginx.
-O Docker atribui uma porta livre em loopback para o Nginx; o script descobre essa
-porta e fornece `E2E_BASE_URL` ao Playwright. Não exige uma branch específica.
-Nenhum `.env` do desenvolvimento é utilizado. Ao terminar, inclusive em falhas,
-apenas os recursos do projeto descartável são removidos, e os IDs dos containers
-de desenvolvimento são comparados com o estado inicial.
-Execute os validadores Docker sequencialmente no mesmo host: criar/remover outra
-rede durante os testes pode causar `ERR_NETWORK_CHANGED` no Chromium. No CI,
-Playwright e observabilidade usam runners independentes.
+The script creates a uniquely named Compose project with ephemeral in-memory
+passwords, PostgreSQL in tmpfs, real migrations, the API, worker, controlled HTTP
+target, and Nginx. Docker assigns a free loopback port to Nginx; the script
+discovers it and supplies `E2E_BASE_URL` to Playwright. No specific branch is
+required. No development `.env` is used. On completion, including failures, only
+resources belonging to the disposable project are removed, and development
+container IDs are compared with their initial state. Run Docker validators
+sequentially on the same host: creating or removing another network during tests
+may cause `ERR_NETWORK_CHANGED` in Chromium. In CI, Playwright and observability
+use separate runners.
 
-O seed exige a flag de E2E e o destino exato `test-db/infrapulse_test`; cria 24
-serviços inativos e 25 checks determinísticos. Separadamente, o Playwright cria um
-serviço pela interface e comprova UP persistido pelo worker contra o HTTP real.
-A suíte cobre CRUD, métricas, histórico, gráficos, filtros, atualização com erro,
-proxy restrito, SSRF, reload, teclado, telas móveis e axe nos temas claro/escuro.
-A auditoria automatizada não substitui avaliação humana completa de acessibilidade.
+The seed requires the E2E flag and exact `test-db/infrapulse_test` destination;
+it creates 24 inactive services and 25 deterministic checks. Separately,
+Playwright creates a service through the interface and confirms a persisted UP
+result from the worker against real HTTP. The suite covers CRUD, metrics, history,
+charts, filters, error refresh, restricted proxy, SSRF, reload, keyboard, mobile
+screens, and axe in light and dark themes. Automated auditing does not replace a
+complete human accessibility evaluation.
 
-Screenshots e relatórios ficam em `frontend/test-results/` e
-`frontend/playwright-report/`, ambos ignorados pelo Git. O HTML pode ser aberto com
-`npx playwright show-report frontend/playwright-report` após a execução.
+Screenshots and reports are written to `frontend/test-results/` and
+`frontend/playwright-report/`, both ignored by Git. After execution, the HTML
+can be opened with `npx playwright show-report frontend/playwright-report`.
 
-## Limitações
+## Limitations
 
-Não há busca textual, ordenação configurável, filtro global por estado ou resumo
-global UP/DOWN na API. A interface não simula esses recursos sobre uma única página.
-Gráficos custam 12 consultas por combinação de serviço/período; uma extensão futura
-para agregação em lote precisará de aprovação de contrato. Não há autenticação,
-WebSocket, notificações externas nem consulta direta ao Prometheus pelo navegador.
+The API has no text search, configurable sorting, global status filter, or global
+UP/DOWN summary. The interface does not simulate those features from one page.
+Charts cost 12 queries per service/period combination; a future batch aggregation
+extension will require contract approval. There is no authentication, WebSocket,
+external notification, or direct browser query to Prometheus.

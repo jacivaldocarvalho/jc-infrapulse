@@ -1,10 +1,10 @@
-# F3A — SBOM local
+# F3A — Local SBOM
 
-Resultado: cobertura parcial das imagens; inventários declarados Python e npm validados. Os SBOMs e manifestos estão em `/tmp/infrapulse-f3a-images/` nesta execução.
+Result: partial image coverage; declared Python and npm inventories validated. The SBOMs and manifests for this run are in `/tmp/infrapulse-f3a-images/`.
 
-Compose padrão: nove referências resolvidas, nove disponíveis e analisadas. Os IDs abaixo são IDs locais de imagem, não digests de manifesto verificados. A detecção Trivy não comprova completude; não há scans de vulnerabilidades.
+Default Compose: nine references resolved, all nine available and analyzed. The IDs below are local image IDs, not verified manifest digests. Trivy detection does not prove completeness; no vulnerability scans were performed.
 
-| Fonte | Estado | Componentes | Bytes | Segundos | Image ID ou SHA-256 do SBOM |
+| Source | Status | Components | Bytes | Seconds | Image ID or SBOM SHA-256 |
 |---|---|---:|---:|---:|---|
 | grafana/grafana:12.1.0 | COVERAGE_PARTIAL | 585 | 623867 | 7.911 | `sha256:6ac590e7cabc2fbe8d7b8fc1ce9c9f0582177b334e0df9c927ebd9670469440f` |
 | grafana/tempo:2.8.2 | COVERAGE_PARTIAL | 353 | 376017 | 2.299 | `sha256:0ef775495967cd5d7a6b2e146b6ea695d624803c8db8349fb8ce4164f719f9b7` |
@@ -18,8 +18,8 @@ Compose padrão: nove referências resolvidas, nove disponíveis e analisadas. O
 | prom/prometheus:v3.5.0 | COVERAGE_PARTIAL | 421 | 413501 | 4.96 | `sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996` |
 | requirements.lock | COVERAGE_PASS | 49 | 22834 | 0.415 | `3b4c36d7928f55e3d931d5f50eb5154495447e263df794fc4b737c8116a2c612` |
 
-Os manifestos individuais registram SHA-256 dos SBOMs, commit, ferramenta e tempo; o consolidado é `consolidated.json`. Python representa `requirements.lock`; npm inclui dev e colapsa instalações repetidas de mesma identidade. Os inventários declarados não representam necessariamente o conteúdo das imagens.
+Individual manifests record the SBOM SHA-256, commit, tool, and time; the aggregate is `consolidated.json`. Python represents `requirements.lock`; npm includes development dependencies and collapses repeated installations with the same identity. Declared inventories do not necessarily represent image contents.
 
-Trivy 0.76.1 foi verificado pelo hash fixado. Ambiente isolado instalado com `pip --require-hashes` a partir de `security/sbom-tools.lock`, seguido de `pip check`. Schemas CycloneDX 1.7 e referências são fixados por SHA-256. Não há afirmação de build reproduzível. Retenção sugerida para futura integração CI: 30 dias.
+Trivy 0.76.1 was verified against its pinned hash. An isolated environment was installed with `pip --require-hashes` from `security/sbom-tools.lock`, followed by `pip check`. CycloneDX 1.7 schemas and references are pinned by SHA-256. No reproducible-build claim is made. Suggested retention for future CI integration: 30 days.
 
-A procedência oficial dos schemas não foi comprovada independentemente na revisão offline; a verificação realizada confirmou apenas a correspondência com os hashes fixados localmente.
+The official origin of the schemas was not independently established during the offline review; the verification only confirmed a match with locally pinned hashes.

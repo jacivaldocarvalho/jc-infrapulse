@@ -1,76 +1,78 @@
-# Sprint 03 — Relatório de entrega
+# Sprint 03 — Delivery report
 
-## Implementação
+## Implementation
 
-Monitoramento GET HTTP/HTTPS em worker independente da API. O checker valida DNS
-e fixa o socket em um IP autorizado, preservando Host/SNI e validação TLS. Não
-usa redirects, retries, proxies ambientais, autenticação ou cookies. Limita tempo,
-corpo e concorrência, sem persistir corpo ou detalhes sensíveis de exceções.
+HTTP/HTTPS GET monitoring runs in a worker separate from the API. The checker
+validates DNS and pins the socket to an authorized IP while preserving Host/SNI
+and TLS validation. It uses no redirects, retries, environment proxies,
+authentication, or cookies. It limits time, body size, and concurrency without
+persisting response bodies or sensitive exception details.
 
-O scheduler seleciona serviços ativos, impede sobreposição local e aplica
-backpressure sem fila ilimitada. Operações SQLAlchemy síncronas usam threads e
-sessões próprias. O worker trata SIGTERM/SIGINT, aguarda tarefas e tem heartbeat
-local. O Compose mantém PostgreSQL isolado, sem novas portas publicadas.
+The scheduler selects active services, prevents local overlap, and applies
+backpressure without an unbounded queue. Synchronous SQLAlchemy operations run
+in threads with their own sessions. The worker handles SIGTERM/SIGINT, waits for
+tasks, and maintains a local heartbeat. Compose keeps PostgreSQL isolated with
+no new published ports.
 
-A revisão Alembic `0002` adiciona checks com FK em cascata e índice por
-serviço/horário/UUID. A revisão `0001` foi preservada. Histórico, métricas e status
-são expostos em endpoints Pydantic; períodos sem dados não indicam 100% de uptime.
+Alembic revision `0002` adds checks with a cascading foreign key and an index
+on service/time/UUID. Revision `0001` was preserved. History, metrics, and status
+are exposed through Pydantic endpoints; periods without data do not imply 100% uptime.
 
-## Validação executada
+## Validation performed
 
-| Verificação | Resultado final |
+| Check | Final result |
 | --- | --- |
-| `.venv/bin/pytest -q` em `backend/` | **157 passed, 11 skipped**; skips exclusivos de PostgreSQL |
-| Suíte completa no `compose.test.yaml`, PostgreSQL 17 | **168 passed**, sem skips |
-| SSRF, DNS rebinding e transporte HTTP/TLS local | Aprovados nas duas suítes |
-| `.venv/bin/ruff check .` / equivalente pela raiz | Aprovado |
-| `.venv/bin/ruff format --check .` / equivalente pela raiz | 45 arquivos formatados |
-| `.venv/bin/mypy` | Sem erros em 45 arquivos |
-| `python -m pip check` local e imagem de testes | Sem dependências incompatíveis |
-| `docker compose --env-file backend/.env config --quiet` | Aprovado |
-| Configuração do `compose.test.yaml` com senha efêmera | Aprovada |
-| Build Docker da API e worker | Aprovado |
-| `git diff --check` | Aprovado |
+| `.venv/bin/pytest -q` in `backend/` | **157 passed, 11 skipped**; skips only for PostgreSQL |
+| Full suite in `compose.test.yaml`, PostgreSQL 17 | **168 passed**, no skips |
+| SSRF, DNS rebinding, and local HTTP/TLS transport | Passed in both suites |
+| `.venv/bin/ruff check .` / equivalent from the root | Passed |
+| `.venv/bin/ruff format --check .` / equivalent from the root | 45 formatted files |
+| `.venv/bin/mypy` | No errors in 45 files |
+| Local and test-image `python -m pip check` | No incompatible dependencies |
+| `docker compose --env-file backend/.env config --quiet` | Passed |
+| `compose.test.yaml` configuration with ephemeral password | Passed |
+| API and worker Docker build | Passed |
+| `git diff --check` | Passed |
 
-A suíte PostgreSQL executou migrações completas e incrementais, preservou um
-serviço entre `0001 → 0002 → 0001 → 0002`, executou `alembic check` e verificou
-constraints, índices, UTC, persistência entre sessões, cascata e p95 no banco real.
-O teste de processo iniciou um worker real, persistiu uma requisição HTTP a um
-servidor controlado, verificou heartbeat e encerramento bem-sucedido com SIGTERM.
-Testes de scheduler verificaram o limite de concorrência, intervalos, inatividade,
-ausência de sobreposição, conclusão durante shutdown e cancelamento após o prazo.
+The PostgreSQL suite performed full and incremental migrations, preserved a
+service through `0001 → 0002 → 0001 → 0002`, ran `alembic check`, and checked
+constraints, indexes, UTC, persistence across sessions, cascading, and p95 in
+the real database. The process test started a real worker, persisted an HTTP
+request to a controlled server, and verified its heartbeat and successful
+SIGTERM shutdown. Scheduler tests checked concurrency, intervals, inactivity,
+no overlap, completion during shutdown, and cancellation after the deadline.
 
-Os testes não acessaram serviços públicos de terceiros. A instalação/build usou
-os registros de dependências e imagens. Banco de testes: senha gerada somente no
-ambiente do processo, rede interna exclusiva, dados em tmpfs e nenhuma porta
-publicada. Containers e rede desse projeto foram removidos após a execução.
-Não foram executadas migrações no banco de desenvolvimento.
+Tests did not access third-party public services. Installation and builds used
+dependency and image registries. The test database used a password generated
+only in the process environment, an exclusive internal network, tmpfs data,
+and no published port. That project's containers and network were removed
+afterward. No migrations were run on the development database.
 
-Uma tentativa de atualizar o pacote local sem isolamento de build falhou porque
-o ambiente não tinha setuptools. A instalação com isolamento foi executada com
-sucesso; o `pip check` final passou. Não há falha de validação pendente.
+An attempt to update the local package without build isolation failed because
+the environment lacked setuptools. Installation with isolation succeeded; the
+final `pip check` passed. No validation failure remained pending.
 
-## Cobertura SSRF
+## SSRF coverage
 
-| Controle | Evidência automatizada |
+| Control | Automated evidence |
 | --- | --- |
-| HTTP/HTTPS, credenciais e portas | Rejeição antes de DNS/conexão |
-| Loopback, privados, link-local e metadata | URLs diretas e respostas DNS proibidas |
-| IPv6 e transição | Bloqueio de mapeados, 6to4 e prefixos NAT64 conhecidos |
-| Todos os IPs DNS | Resposta mista público/proibido rejeitada antes do transporte |
-| Rebinding | Segunda resposta proibida não altera a conexão da primeira tentativa; próxima tentativa rejeitada |
-| Ausência de nova resolução | `getaddrinfo` proibido durante conexões TCP/TLS reais controladas |
-| IP efetivo | Peer do socket corresponde ao endereço configurado no backend |
-| Host e SNI | Servidor TLS controlado inspeciona hostname e cabeçalho recebidos |
-| TLS | Certificado confiável funciona; certificado não confiável e hostname incorreto são rejeitados |
-| Proxies | Variáveis HTTP/HTTPS/ALL_PROXY apontam a destino inválido sem interferir na conexão direta |
-| Redirects | 302 para metadata retorna DOWN sem seguir Location |
-| Cookies/credenciais | Duas requisições não enviam Cookie ou Authorization, apesar de Set-Cookie |
-| Limite de resposta | Content-Length e streaming chunked excessivos são rejeitados |
-| Exceção interna | Exige simultaneamente host exato e rede autorizada |
-| Dados sensíveis | Mensagens fixas e logs correlacionados não incluem o token de teste |
+| HTTP/HTTPS, credentials, and ports | Rejected before DNS/connection |
+| Loopback, private, link-local, and metadata | Direct URLs and forbidden DNS responses |
+| IPv6 and transition | Mapped addresses, 6to4, and known NAT64 prefixes blocked |
+| All DNS IPs | Mixed public/forbidden response rejected before transport |
+| Rebinding | Forbidden second response does not alter the first attempt's connection; next attempt rejected |
+| No second resolution | `getaddrinfo` forbidden during controlled real TCP/TLS connections |
+| Effective IP | Socket peer matches the backend-configured address |
+| Host and SNI | Controlled TLS server inspects received hostname and header |
+| TLS | Trusted certificate succeeds; untrusted certificate and wrong hostname rejected |
+| Proxies | HTTP/HTTPS/ALL_PROXY variables point to an invalid target without affecting the direct connection |
+| Redirects | 302 to metadata returns DOWN without following Location |
+| Cookies/credentials | Two requests send neither Cookie nor Authorization despite Set-Cookie |
+| Response limit | Excessive Content-Length and chunked streaming rejected |
+| Internal exception | Requires both an exact host and an authorized network |
+| Sensitive data | Fixed messages and correlated logs exclude the test token |
 
-## Arquivos criados
+## Files created
 
 - `backend/alembic/versions/0002_create_check_results.py`
 - `backend/app/api/routes/monitoring.py`
@@ -92,7 +94,7 @@ sucesso; o `pip check` final passou. Não há falha de validação pendente.
 - `docs/adr/0001-http-monitoring.md`
 - `docs/sprint03-report.md`
 
-## Arquivos modificados
+## Files modified
 
 - `README.md`
 - `backend/.env.example`
@@ -109,32 +111,29 @@ sucesso; o `pip check` final passou. Não há falha de validação pendente.
 - `compose.test.yaml`
 - `compose.yaml`
 
-## Decisões e limites
+## Decisions and limits
 
-Decisões completas: [ADR 0001](../../adr/0001-http-monitoring.md).
-Operação e ameaças: [monitoring.md](../../operations/monitoring.md).
+Full decisions: [ADR 0001](../../adr/0001-http-monitoring.md).
+Operations and threats: [monitoring.md](../../operations/monitoring.md).
 
-- Uma única réplica do worker; múltiplas réplicas precisam de coordenação distribuída.
-- Sem fila durável de resultados ou garantia de exactly-once. Tentativas sem commit
-  podem ser perdidas/repetidas após reinício.
-- Sem retenção automática do histórico nesta sprint.
-- Polling e saturação podem atrasar verificações; mudanças no intervalo podem
-  aguardar o prazo em memória da tentativa anterior.
-- Cancelar asyncio não interrompe threads DNS/DB já iniciadas. O banco possui
-  timeouts; o resolver depende da configuração do sistema.
-- O socket fixa o IP, mas não controla roteamento/NAT, prefixos de tradução
-  personalizados ou intermediários públicos. Egress de infraestrutura complementa
-  a política SSRF.
-- Média/p95 incluem as durações de tentativas com falha. Disponibilidade mede
-  proporção de checks UP, sem ponderação temporal. `down_checks` inclui todas as falhas.
-- Prometheus/OpenTelemetry completos, autenticação e dashboard não fazem parte
-  desta entrega.
+- One worker replica; multiple replicas need distributed coordination.
+- No durable result queue or exactly-once guarantee. Attempts without a commit
+  may be lost or repeated after restart.
+- No automatic history retention in this sprint.
+- Polling and saturation may delay checks; interval changes may wait for the
+  preceding attempt's in-memory deadline.
+- asyncio cancellation does not stop already started DNS/DB threads. Database
+  operations have timeouts; the resolver depends on system configuration.
+- The socket pins the IP but cannot control routing/NAT, custom translation
+  prefixes, or public intermediaries. Infrastructure egress complements SSRF policy.
+- Mean/p95 include failed-attempt durations. Availability is the share of UP
+  checks without time weighting. `down_checks` includes every failure.
+- Full Prometheus/OpenTelemetry, authentication, and a dashboard are outside this delivery.
 
-O trabalho permaneceu na `develop`. Entire continuou habilitado; hooks e
-configurações não foram modificados. Nenhum checkpoint manual, commit ou push
-foi realizado.
+Work remained on `develop`. Entire stayed enabled; hooks and configuration were
+not changed. No manual checkpoint, commit, or push was performed.
 
-Commit sugerido, a ser criado somente pelo fluxo autorizado do projeto:
+Suggested commit, to be created only through the project's authorized workflow:
 
 ```text
 feat(monitoring): add SSRF-safe HTTP worker and reliability API

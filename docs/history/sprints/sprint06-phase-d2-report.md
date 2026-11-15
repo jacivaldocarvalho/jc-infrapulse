@@ -1,195 +1,198 @@
-# Sprint 06 — Fase D2: Playwright E2E e observabilidade CI
+# Sprint 06 — Phase D2: Playwright E2E and observability CI
 
-Data: 2026-10-30. Implementação publicada e execução remota
-**41067075376: FAIL**. Correção posterior do isolamento do teste validada somente
-localmente, sem staging, commit ou push nesta rodada. Uma nova execução remota
-completa continua obrigatória antes da aprovação da D2. As seções anteriores à
-última correção preservam o histórico das rodadas locais e da publicação.
+Date: 2026-10-30. Implementation published; remote run
+**41067075376: FAIL**. A subsequent test-isolation fix was validated locally
+only, without staging, commit, or push in that round. Another complete remote
+run is required before D2 approval. Sections preceding the final fix preserve
+the history of local runs and publication.
 
-## Baseline, inspeção e problemas encontrados
+## Baseline, inspection, and problems found
 
-Branch `develop`, HEAD preservado em
-`8598ab8a6c3090360ced5401403e37fc4872fd4d`; working tree inicialmente limpa.
-Foram lidos AGENTS.md, guia Entire, workflow, validadores, Composes, dependências,
-configuração Playwright, cenários E2E, fixtures e testes reais de observabilidade.
-Brain foi consultado, mas seu índice está atrasado; o código atual foi a fonte de
-verdade. Não houve refresh, reparo ou alteração de configuração Entire.
+Branch `develop`, HEAD preserved at
+`8598ab8a6c3090360ced5401403e37fc4872fd4d`; working tree initially clean.
+Read AGENTS.md, the Entire guide, workflow, validators, Compose files,
+dependencies, Playwright configuration, E2E scenarios, fixtures, and real
+observability tests. Brain was consulted, but its index was behind; current
+code was the source of truth. No Entire refresh, repair, or configuration change.
 
-Problemas documentados antes das correções:
+Problems documented before the fixes:
 
-| Problema | Correção restrita à infraestrutura de testes |
+| Problem | Fix limited to test infrastructure |
 | --- | --- |
-| Validador E2E exigia branch develop | Removida dependência de branch/Git; validado em cópia sem .git |
-| Verificação do Compose principal resolvia backend/.env | Runner valida somente seu Compose descartável com --env-file /dev/null |
-| E2E exigia 8080 livre, ocupada pelo frontend local | Docker publica porta dinâmica em 127.0.0.1; runner descobre E2E_BASE_URL |
-| Subnets fixas 172.30.240/241 | Removidas; Docker aloca redes; autorização de execução usa IP real do alvo /32 |
-| Nomes sem preflight/ownership explícitos | Nome exclusivo, checagem de recursos e marker criado com modo exclusivo |
-| Observabilidade repetia a suíte completa PostgreSQL | D1 preservada como gate separado; D2 executa somente a stack real |
-| Seleção ampla de testes produzia skips | Seleção dos dois node IDs exatos; JUnit rejeita skip, falha, erro ou ausência de caso |
-| Reinício do Collector sem verificar recuperação | Repete teste real completo após religar Collector; verifica shutdown/reinício do worker |
-| Ausência de JUnit Playwright | Reporter JUnit adicionado, mantendo HTML, traces e screenshots |
+| E2E validator required the develop branch | Removed branch/Git dependency; validated in a copy without .git |
+| Main Compose check resolved backend/.env | Runner validates only its disposable Compose with --env-file /dev/null |
+| E2E required free port 8080, occupied by local frontend | Docker publishes a dynamic port on 127.0.0.1; runner discovers E2E_BASE_URL |
+| Fixed 172.30.240/241 subnets | Removed; Docker allocates networks; execution authorization uses the target's actual /32 IP |
+| Names lacked explicit preflight/ownership | Unique name, resource check, and exclusively created marker |
+| Observability reran the full PostgreSQL suite | D1 retained as a separate gate; D2 runs only the real stack |
+| Broad test selection caused skips | Two exact node IDs selected; JUnit rejects skip, failure, error, or missing case |
+| Collector restart lacked recovery check | Full real test repeated after Collector restart; worker shutdown/restart checked |
+| No Playwright JUnit | JUnit reporter added, retaining HTML, traces, and screenshots |
 
-## Arquivos
+## Files
 
-Modificados:
+Modified:
 
 - `.github/workflows/ci.yml`.
-- `compose.frontend.test.yaml` e `compose.observability.test.yaml`.
+- `compose.frontend.test.yaml` and `compose.observability.test.yaml`.
 - `frontend/playwright.config.ts`.
-- `scripts/validate-dashboard.py` e `scripts/validate-observability.sh`.
-- `README.md`, `docs/frontend.md`, `docs/observability.md`.
+- `scripts/validate-dashboard.py` and `scripts/validate-observability.sh`.
+- `README.md`, `docs/frontend.md`, and `docs/observability.md`.
 
-Criados:
+Created:
 
-- `scripts/integration_support.py`: lifecycle compartilhado sem dependências novas.
-- `scripts/test_integration_support.py`: 20 testes unittest após as correções,
-  incluindo os oito testes de lifecycle originais, sem acessar Docker.
-- `scripts/validate-observability.py`: orquestra validadores e cenários reais.
+- `scripts/integration_support.py`: shared lifecycle without new dependencies.
+- `scripts/test_integration_support.py`: 20 unittest cases after fixes, including
+  the eight original lifecycle tests, without Docker access.
+- `scripts/validate-observability.py`: orchestrates validators and real scenarios.
 - `docs/sprint06-phase-d2-report.md`.
 
-Não foram modificados aplicação, worker, política SSRF, migrações, Dockerfiles,
-Compose de produção, dependências/locks, testes Playwright ou testes backend.
-O wrapper shell de observabilidade continua disponível e delega ao runner Python.
-Os sete jobs de validação anteriores foram comparados estruturalmente com HEAD
-e permanecem idênticos. Só a lista needs do agregador foi estendida.
+The application, worker, SSRF policy, migrations, Dockerfiles, production Compose,
+dependencies/locks, Playwright tests, and backend tests were not modified. The
+observability shell wrapper remains available and delegates to the Python runner.
+The seven preceding validation jobs were structurally compared with HEAD and
+remain identical. Only the aggregator's needs list was extended.
 
 ## Jobs
 
-| Job | Ambiente e execução | Limites |
+| Job | Environment and execution | Limits |
 | --- | --- | --- |
-| playwright-e2e | Ubuntu 24.04, Python 3.12, Node 24.18.1, npm ci, Chromium da versão Playwright travada, stack real e oito cenários | Job 35 min, browser install 5 min, integração 25 min, cleanup 3 min |
-| observability-integration | Ubuntu 24.04, Python 3.12, Docker Compose, validadores, cenários normal/outage/recuperação e correlação | Job 35 min, integração 25 min, cleanup 3 min |
+| playwright-e2e | Ubuntu 24.04, Python 3.12, Node 24.18.1, npm ci, locked Playwright Chromium, real stack, eight scenarios | Job 35 min, browser install 5 min, integration 25 min, cleanup 3 min |
+| observability-integration | Ubuntu 24.04, Python 3.12, Docker Compose, validators, normal/outage/recovery scenarios, and correlation | Job 35 min, integration 25 min, cleanup 3 min |
 
-Playwright instala Chromium/dependências do sistema com
-`npm exec --no -- playwright install --with-deps chromium`, após npm ci em frontend.
-Não resolve uma versão arbitrária do Playwright. Node 24.18.1 coincide com Dockerfile
-e engines existentes. Ambos os jobs executam os testes de segurança do lifecycle.
-Pip não é instalado no host desses jobs; dependências backend vêm dos Dockerfiles
-e constraints existentes.
+Playwright installs Chromium/system dependencies with
+`npm exec --no -- playwright install --with-deps chromium` after npm ci in frontend.
+It does not resolve an arbitrary Playwright version. Node 24.18.1 matches the
+Dockerfile and existing engines. Both jobs run lifecycle security tests. pip is
+not installed on these job hosts; backend dependencies come from existing
+Dockerfiles and constraints.
 
-O frontend E2E é servido pelo Nginx real, ligado à API e ao PostgreSQL descartável.
-O Dockerfile existente exporta o OpenAPI do mesmo checkout, gera tipos e compila
-o frontend. Não há cópia manual de schema nem consumo de outro commit/run.
+Frontend E2E is served by real Nginx connected to the disposable API and
+PostgreSQL. The existing Dockerfile exports OpenAPI from the same checkout,
+generates types, and builds the frontend. There is no manual schema copy or
+consumption of another commit/run.
 
-Os testes E2E são executados sem alterações: CRUD real/worker UP; histórico,
-métricas/p95/gráficos; estados vazios; filtros/paginação/erro de atualização;
-allowlist do proxy e SSRF; teclado/mobile/temas/axe; duas regressões de exclusão.
-As interceptações de rede que já existiam nos testes continuam limitadas à injeção
-de falha/latência; nenhuma integração real foi substituída por mocks. As verificações
-existentes de pageerror e de ausência de novas leituras após DELETE foram preservadas.
+E2E tests run unchanged: real CRUD/worker UP; history, metrics/p95/charts; empty
+states; filters/pagination/refresh errors; proxy allowlist and SSRF;
+keyboard/mobile/themes/axe; two deletion regressions. Existing network
+interceptions remain limited to injecting failure or latency; no real integration
+was replaced with mocks. Existing pageerror and no-new-read-after-DELETE checks
+were preserved.
 
-Observabilidade executa, em sequência:
+Observability runs in sequence:
 
-1. Build dos serviços existentes e startup do alvo controlado.
-2. Promtool check config/check rules/test rules, Collector validate e amtool check-config,
-   usando as imagens e mounts do próprio projeto Compose.
-3. PostgreSQL em tmpfs, migração e startup de API, worker, Collector, Tempo,
-   Prometheus, Grafana, Alertmanager e destino HTTP.
-4. Verificação de portas/rede e `test_real_observability_stack`, com um caso e zero skips.
-5. Extrai IDs reais dos logs estruturados API/worker e confirma que existem no Tempo.
-6. Para Collector e executa somente `test_collector_outage_real_processes`.
-7. Religa Collector e repete o teste real completo, incluindo métricas, traces,
-   queries dos dashboards/datasources e entrega do alerta de integração.
-8. Para worker, exige worker_stopped/scheduler_stopped nos logs e religa com --wait.
+1. Build existing services and start the controlled target.
+2. Run Promtool config/rules/test-rules checks, Collector validate, and amtool
+   check-config using the project's own Compose images and mounts.
+3. Start PostgreSQL in tmpfs, run migration, and start API, worker, Collector,
+   Tempo, Prometheus, Grafana, Alertmanager, and HTTP target.
+4. Check ports/networks and `test_real_observability_stack`, one case, zero skips.
+5. Extract real IDs from structured API/worker logs and confirm them in Tempo.
+6. Stop Collector and run only `test_collector_outage_real_processes`.
+7. Restart Collector and repeat the complete real test, including metrics, traces,
+   dashboard/data-source queries, and integration alert delivery.
+8. Stop worker, require worker_stopped/scheduler_stopped logs, and restart with --wait.
 
-Grafana usa usuário admin e banco/usuário PostgreSQL definidos explicitamente no
-ambiente descartável. Uma execução final com valores conflitantes no ambiente
-do processo comprovou que eles não são herdados pela stack.
+Grafana uses admin and PostgreSQL database/user values explicitly defined in the
+disposable environment. A final run with conflicting process-environment values
+proved they were not inherited by the stack.
 
-## Isolamento e cleanup
+## Isolation and cleanup
 
-Cada job usa `INFRAPULSE_TEST_PROJECT` com prefixo próprio, run ID e run attempt.
-Localmente o runner gera sufixo aleatório, sem depender do nome da pasta/branch.
-Antes de criar recursos, recusa containers, redes ou volumes com o mesmo projeto.
-Um marker em RUNNER_TEMP (ou /tmp local) é criado atomicamente; não contém senha.
+Each job uses `INFRAPULSE_TEST_PROJECT` with its own prefix, run ID, and attempt.
+Locally, the runner generates a random suffix without depending on directory or
+branch names. Before creating resources, it rejects containers, networks, or
+volumes with that project name. A marker in RUNNER_TEMP (or local /tmp) is created
+atomically and contains no password.
 
-Senhas efêmeras são geradas em memória e mascaradas antes de comandos Docker no
-GitHub. Não há `.env`, arquivo de credenciais, dump de ambiente ou config resolvida
-nos logs. Os Composes usam --env-file /dev/null e nomes de projeto explícitos.
+Ephemeral passwords are generated in memory and masked before Docker commands
+on GitHub. Logs contain no `.env`, credential file, environment dump, or resolved
+configuration. Compose files use --env-file /dev/null and explicit project names.
 
-Redes são alocadas pelo Docker, sem IPAM fixo. Depois de iniciar monitoring-target,
-o runner obtém seu IP e autoriza somente esse /32, hostname exato e porta prevista.
-Não amplia o acesso do checker à rede privada do runner. Código SSRF não foi alterado.
+Docker allocates networks without fixed IPAM. After starting monitoring-target,
+the runner gets its IP and authorizes only that /32, exact hostname, and expected
+port. It does not expand checker access to the runner's private network. SSRF
+code was unchanged.
 
-E2E publica somente Nginx em loopback, com porta dinâmica, usuário 101 e filesystem
-readonly. API, worker, destino e PostgreSQL não publicam portas. O banco permanece
-na rede data interna; worker alcança o destino pela rede targets interna.
+E2E publishes only Nginx on loopback at a dynamic port, with user 101 and a
+read-only filesystem. API, worker, target, and PostgreSQL publish no ports.
+The database remains on the internal data network; the worker reaches the
+target through the internal targets network.
 
-O override de observabilidade remove bridges de saída desnecessárias de API,
-worker e Grafana. O banco usa somente internal; os serviços de telemetria usam
-telemetry interna. Nenhuma porta administrativa, de métricas ou PostgreSQL é publicada.
-Volumetria de telemetria é exclusivamente do projeto descartável; banco usa tmpfs.
+The observability override removes unnecessary egress bridges from API, worker,
+and Grafana. The database uses only internal; telemetry services use the internal
+telemetry network. No administrative, metrics, or PostgreSQL port is published.
+Telemetry volumes belong only to the disposable project; the database uses tmpfs.
 
-O context manager executa down --volumes --remove-orphans em sucesso ou falha,
-confirma ausência de recursos com o label do projeto e compara IDs, StartedAt,
-RestartCount e estado dos containers preexistentes. SIGTERM encerra via finally.
-O workflow também possui passo always() de fallback --cleanup, com o mesmo nome
-de projeto e marker. Sem marker de ownership, não executa down.
-Falhas de cleanup ou mudança de containers preexistentes reprovam a validação.
-Não há prune, alteração de firewall, container privilegiado ou comando contra a stack local.
+The context manager runs down --volumes --remove-orphans on success or failure,
+confirms no resources remain with the project label, and compares IDs, StartedAt,
+RestartCount, and status of pre-existing containers. SIGTERM shuts down via
+finally. The workflow also has an always() fallback --cleanup step using the
+same project name and marker. Without an ownership marker, it does not run down.
+Cleanup failures or changed pre-existing containers fail validation. There is
+no prune, firewall change, privileged container, or command against the local stack.
 
-## Relatórios e artefatos
+## Reports and artifacts
 
-- `playwright-e2e-results`: frontend/test-results e frontend/playwright-report,
-  com JUnit em test-results/playwright.xml; traces/screenshots em falhas e
-  screenshots/timelines que os próprios cenários já produzem.
-- `observability-integration-junit`: somente normal.xml, outage.xml e recovery.xml
-  em RUNNER_TEMP/observability-results, obtidos dos containers de teste por docker cp.
+- `playwright-e2e-results`: frontend/test-results and frontend/playwright-report,
+  with JUnit at test-results/playwright.xml; traces/screenshots on failures and
+  screenshots/timelines already produced by scenarios.
+- `observability-integration-junit`: only normal.xml, outage.xml, and recovery.xml
+  in RUNNER_TEMP/observability-results, copied from test containers with docker cp.
 
-Uploads usam always(), retenção de sete dias e erro para arquivo ausente.
-Não incluem banco, volumes, marker, ambiente ou credenciais. Os arquivos finais
-foram inspecionados: sem .env, symlinks ou padrões de tokens/chaves privadas.
-Traces contêm somente tráfego e fixtures da stack descartável, não a interface
-administrativa Grafana. A inspeção por padrões não equivale a auditoria exaustiva.
+Uploads use always(), seven-day retention, and failure on missing files. They do
+not include database, volumes, marker, environment, or credentials. Final files
+were inspected: no .env, symlinks, or token/private-key patterns. Traces contain
+only disposable-stack traffic and fixtures, not the Grafana administration UI.
+Pattern checks are not an exhaustive audit.
 
-## Validação local
+## Local validation
 
-Cópia limpa em `/tmp/infrapulse-s06d2-clean`, criada a partir dos arquivos versionados
-e das alterações locais autorizadas, sem .git, .env, node_modules ou tipos gerados.
-`npm ci` instalou 370 pacotes e reportou zero vulnerabilidades na auditoria incidental.
-Chromium 1248 já disponível no host foi reutilizado; não foram instalados pacotes
-do sistema no ambiente local. O comando --with-deps do CI ainda requer execução remota.
+A clean copy in `/tmp/infrapulse-s06d2-clean` was created from versioned files
+and authorized local changes, without .git, .env, node_modules, or generated types.
+`npm ci` installed 370 packages and reported zero vulnerabilities in its
+incidental audit. Chromium 1248 already on the host was reused; no system
+packages were installed locally. CI's --with-deps command still requires remote execution.
 
-| Verificação executada | Resultado |
+| Check performed | Result |
 | --- | --- |
-| Ruff check/format dos sete scripts Python | PASS |
-| unittest do lifecycle | PASS — 8 casos: nome, conflito, daemon, ownership, falha e preservação do erro |
-| TypeScript, ESLint --max-warnings=0 e Prettier | PASS |
-| Geração OpenAPI/tipos do checkout limpo | PASS |
-| Build Docker Nginx/API/worker/observabilidade | PASS — Dockerfiles existentes |
-| Playwright isolado | PASS — 8 casos em 28,6 s, sem falhas, erros ou skips |
-| Regressões E2E de exclusão | PASS — zero leituras automáticas novas; cancelamento anterior ao DELETE observado |
-| Acessibilidade/teclado/mobile/temas | PASS — cenário original e axe preservados |
-| Promtool, Collector validate e amtool | PASS |
-| Observabilidade normal | PASS — 1 caso, 52,11 s, zero skips |
-| Collector indisponível | PASS — 1 caso, 1,09 s, zero skips; API pronta e UP persistido pelo worker |
-| Recuperação do Collector | PASS — repetição do caso real, 1,73 s, zero skips |
-| Correlação log/trace | PASS — IDs de API e worker encontrados no Tempo |
-| Worker shutdown/restart | PASS — logs de parada e startup com --wait |
-| JUnit/artefatos finais | PASS — 8 casos Playwright e três XMLs de um caso cada |
-| Cleanup e containers preexistentes | PASS — recursos descartáveis ausentes; IDs/start times/restarts/estado preservados |
-| Agregador | PASS — 262.144 combinações, somente nove sucessos aprovam |
-| actionlint, bash -n, ShellCheck e git diff --check | PASS |
-| Instalação local de pacotes OS via --with-deps | NOT RUN — host já executa Chromium; sem alteração do ambiente |
-| GitHub Actions D2 | NOT RUN — não autorizado commit/push |
+| Ruff check/format for seven Python scripts | PASS |
+| Lifecycle unittest | PASS — 8 cases: name, conflict, daemon, ownership, failure, and error preservation |
+| TypeScript, ESLint --max-warnings=0, and Prettier | PASS |
+| OpenAPI/type generation from clean checkout | PASS |
+| Nginx/API/worker/observability Docker build | PASS — existing Dockerfiles |
+| Isolated Playwright | PASS — 8 cases in 28,6 s, no failures, errors, or skips |
+| Deletion E2E regressions | PASS — zero new automatic reads; cancellation before DELETE observed |
+| Accessibility/keyboard/mobile/themes | PASS — original scenario and axe preserved |
+| Promtool, Collector validate, and amtool | PASS |
+| Normal observability | PASS — 1 case, 52,11 s, zero skips |
+| Collector unavailable | PASS — 1 case, 1,09 s, zero skips; API ready and worker persisted UP |
+| Collector recovery | PASS — repeated real case, 1,73 s, zero skips |
+| Log/trace correlation | PASS — API and worker IDs found in Tempo |
+| Worker shutdown/restart | PASS — stop and startup logs with --wait |
+| Final JUnit/artifacts | PASS — 8 Playwright cases and three one-case XMLs |
+| Cleanup and pre-existing containers | PASS — disposable resources gone; IDs/start times/restarts/status preserved |
+| Aggregator | PASS — 262.144 combinations, only nine successes accepted |
+| actionlint, bash -n, ShellCheck, and git diff --check | PASS |
+| Local OS package installation via --with-deps | NOT RUN — host already runs Chromium; no environment change |
+| D2 GitHub Actions | NOT RUN — commit/push not authorized |
 
-Não ficou verificação final em FAIL ou BLOCKED. Limitações remotas permanecem
-identificadas como NOT RUN.
+No final check remained FAIL or BLOCKED. Remote limitations remain NOT RUN.
 
-A primeira tentativa local executou ambos os validadores em paralelo no mesmo
-daemon. O Playwright aprovou sete casos e falhou no cenário de atualização:
-o trace mostrou 17 respostas net::ERR_NETWORK_CHANGED enquanto a outra stack
-removia redes, além do único 503 intencional. A guarda detectou que os containers
-temporários da observabilidade, presentes no snapshot inicial do E2E, desapareceram.
-Ambas as stacks foram removidas. Evidências de falha foram preservadas em /tmp.
-O E2E foi repetido sozinho e passou sem modificar testes, asserções ou produto.
-No GitHub, os jobs usam runners separados; localmente devem rodar sequencialmente.
+The first local attempt ran both validators in parallel on one daemon. Playwright
+passed seven cases but failed the refresh scenario: the trace showed 17
+net::ERR_NETWORK_CHANGED responses while the other stack removed networks,
+in addition to the single intentional 503. The guard found that temporary
+observability containers present in E2E's initial snapshot had disappeared.
+Both stacks were removed. Failure evidence was retained in /tmp. E2E was
+repeated alone and passed without changing tests, assertions, or product. On
+GitHub the jobs use separate runners; locally they must run sequentially.
 
-Houve ainda uma tentativa de npm ci no diretório raiz, recusada por ausência de
-lock; foi repetida em frontend na cópia temporária. Nenhuma dependência do ambiente
-local existente foi atualizada.
+An npm ci attempt in the root directory was also rejected for lacking a lock;
+it was repeated in frontend in the temporary copy. No dependency in the existing
+local environment was updated.
 
-Comandos principais:
+Main commands:
 
 ```bash
 npm --prefix frontend ci
@@ -203,123 +206,122 @@ python3 scripts/validate-dashboard.py --cleanup
 bash scripts/validate-observability.sh --cleanup
 ```
 
-Evidências locais fora do Git:
+Local evidence outside Git:
 
 - `/tmp/infrapulse-s06d2-clean/evidence/playwright-final.log`.
-- `/tmp/infrapulse-s06d2-clean/frontend/test-results/playwright.xml` e playwright-report.
+- `/tmp/infrapulse-s06d2-clean/frontend/test-results/playwright.xml` and playwright-report.
 - `/tmp/infrapulse-s06d2-clean/evidence/observability-final.log`.
 - `/tmp/infrapulse-s06d2-clean/evidence/observability-final/{normal,outage,recovery}.xml`.
-- `/tmp/infrapulse-s06d2-clean/evidence/first-test-results/`, com trace/screenshot da falha inicial.
-- `/tmp/infrapulse-s06d2-final-check.py`, helper da verificação de estrutura/agregador/artefatos.
+- `/tmp/infrapulse-s06d2-clean/evidence/first-test-results/`, with trace/screenshot from the initial failure.
+- `/tmp/infrapulse-s06d2-final-check.py`, helper for structure/aggregator/artifact verification.
 
-## Quality gate, segurança e riscos residuais
+## Quality gate, security, and residual risks
 
-ci-required mantém o nome público, always() e código anterior. Exige os sete jobs
-existentes mais playwright-e2e e observability-integration. O bloco exato foi
-avaliado nas 262.144 combinações de success/failure/cancelled/skipped: apenas nove
-sucessos aprovam. Falhas e skips das novas dependências impedem aprovação.
+ci-required retains its public name, always(), and prior code. It requires the
+seven existing jobs plus playwright-e2e and observability-integration. The exact
+block was evaluated in 262.144 success/failure/cancelled/skipped combinations:
+only nine successes pass. Failures and skips in new dependencies prevent approval.
 
-Permissões contents: read, triggers, concurrency, timeouts, checkout sem credenciais
-persistidas e SHAs completos foram preservados. Cache npm usa package-lock.json.
-Nenhuma action foi atualizada; os warnings herdados de Node.js 20 podem reaparecer.
-Não há pull_request_target, secrets de produção, publicação/deploy ou supressões
-para obter PASS. Avisos de pip no build, initdb e NO_COLOR/FORCE_COLOR foram
-mantidos; não foram instaladas dependências novas nem desativadas validações.
+Contents: read permissions, triggers, concurrency, timeouts, checkout without
+persisted credentials, and full SHAs were preserved. npm cache uses package-lock.json.
+No action was updated; inherited Node.js 20 warnings may reappear. There is no
+pull_request_target, production secret, publication/deploy, or suppression to
+obtain PASS. pip build, initdb, and NO_COLOR/FORCE_COLOR warnings were retained;
+no new dependency was installed and no validation was disabled.
 
-O runner precisa de Compose com suporte aos tags !reset/!override dos Composes de
-teste. Isso passou no Compose 5.6.0 local; execução hospedada ainda é necessária.
-Perda forçada do runner pode impedir cleanup, apesar de finally e fallback always().
-Builds e downloads dependem dos registros; tags Docker existentes continuam mutáveis.
-Imagens/cache locais permanecem; containers, redes e volumes descartáveis foram removidos.
-Validadores não devem compartilhar um daemon simultaneamente com Chromium ativo.
+The runner needs Compose support for !reset/!override tags in test Compose files.
+This passed with local Compose 5.6.0; a hosted run is still required. Forced
+runner loss may prevent cleanup despite finally and always() fallback. Builds
+and downloads depend on registries; existing Docker tags remain mutable.
+Local images/cache remain; disposable containers, networks, and volumes were
+removed. Validators should not share a daemon while Chromium is active.
 
-Branch e HEAD permanecem no baseline. As mudanças estão restritas aos 13 arquivos
-listados, sem staging, commit ou push. Entire permanece habilitado e informa um
-checkpoint pendente da D1 (`01M66BC9ERQK3REFAJC1FCWQ1M`), sem erro de sincronização;
-nenhum checkpoint manual, reparo, alteração de hooks ou sincronização foi executado.
-Frontend, API e PostgreSQL locais mantiveram seus IDs e permaneceram saudáveis.
+Branch and HEAD remain at baseline. Changes are limited to the listed 13 files,
+without staging, commit, or push. Entire remains enabled and reports one pending
+D1 checkpoint (`01M66BC9ERQK3REFAJC1FCWQ1M`), without a sync error; no manual
+checkpoint, repair, hook change, or synchronization was run. Local frontend,
+API, and PostgreSQL retained their IDs and stayed healthy.
 
-Recomendação: pronta para revisão local e posterior autorização de versionamento
-e validação remota. Não considerar D2 definitivamente aprovada antes do sucesso
-dos nove gates e do agregador no GitHub Actions. Nenhuma fase posterior foi iniciada.
+Recommendation: ready for local review and later authorization for versioning
+and remote validation. Do not consider D2 finally approved before the nine
+gates and aggregator succeed on GitHub Actions. No later phase was started.
 
-Conventional Commit sugerido, sem executar:
+Suggested Conventional Commit, not executed:
 `ci(integration): add Playwright and observability gates`.
 
-## Correção local de propagação de erros — revisão D2
+## Local error-propagation fix — D2 review
 
-Esta rodada corrige exclusivamente os validadores e seus testes. Não houve staging,
-commit, push, execução de Docker nem nova execução de Playwright/observabilidade.
-Os resultados de integração acima são históricos; a D2 continua sem aprovação remota.
+This round fixes only the validators and their tests. There was no staging,
+commit, push, Docker run, or new Playwright/observability run. The integration
+results above are historical; D2 still lacks remote approval.
 
-### Defeitos, causa raiz e correção
+### Defects, root cause, and fix
 
-- **A:** ambos os entrypoints chamavam `main()` diretamente. Um
-  `CalledProcessError` não tratado fazia o interpretador encerrar com 1, descartando
-  o código original, inclusive 17. Ambos agora usam `run_cli`, que registra o
-  diagnóstico com traceback e propaga códigos de subprocesso entre 1 e 255.
-- **B:** o `docker cp` no `finally` de `run_case` podia substituir a exceção do
-  pytest. A coleta agora ocorre em bloco separado: sua falha é registrada e a
-  exceção primária original é relançada. Sem falha primária, a falha de coleta
-  continua impedindo sucesso. A mesma precedência foi aplicada ao encerramento
-  do projeto: cleanup e inspeção são tentados separadamente, todos os erros
-  secundários são registrados e nenhum substitui uma causa primária existente.
-- O logger mascara os valores das três credenciais efêmeras geradas pelo projeto
-  antes de emitir mensagens/tracebacks. A saída capturada do teste também passa
-  pelo mascaramento. Não foram adicionadas dependências ou supressões de erros.
+- **A:** both entrypoints called `main()` directly. An unhandled
+  `CalledProcessError` made the interpreter exit with 1, discarding the original
+  code, including 17. Both now use `run_cli`, which logs a traceback diagnosis
+  and propagates subprocess codes from 1 to 255.
+- **B:** `docker cp` in `run_case`'s `finally` could replace the pytest exception.
+  Collection now runs in a separate block: a collection failure is logged and
+  the original primary exception is re-raised. Without a primary failure,
+  collection failure still prevents success. The same precedence applies to
+  project shutdown: cleanup and inspection are attempted separately, all
+  secondary errors are logged, and none replaces an existing primary cause.
+- The logger masks the three ephemeral credential values generated by the
+  project before emitting messages/tracebacks. Captured test output is masked
+  too. No dependency or error suppression was added.
 
-Política de saída: sucesso normal retorna 0; códigos válidos 1–255 são preservados.
-Status negativos de sinais válidos são convertidos para `128 + sinal`, conforme
-convenção do shell: SIGTERM (-15) resulta em 143 e SIGKILL (-9) em 137. Um
-entrypoint não consegue representar diretamente o status negativo de subprocesso.
-Exceções inesperadas sem código numérico e `CalledProcessError` malformados
-(0 ou fora da faixa representável) resultam em 1, com diagnóstico, evitando sucesso
-acidental por truncamento do status pelo sistema operacional.
+Exit policy: normal success returns 0; valid codes 1–255 are preserved. Negative
+statuses from valid signals become `128 + sinal`, per shell convention: SIGTERM
+(-15) becomes 143 and SIGKILL (-9) becomes 137. An entrypoint cannot directly
+represent a negative subprocess status. Unexpected exceptions without a numeric
+code and malformed `CalledProcessError` values (0 or outside the representable
+range) return 1 with a diagnostic, avoiding accidental success from OS truncation.
 
-Arquivos alterados nesta correção, todos já pertencentes aos 13 arquivos da D2:
+Files changed in this fix, all already among the 13 D2 files:
 
-- `scripts/integration_support.py`: entrypoint, mascaramento e precedência no cleanup.
-- `scripts/validate-dashboard.py`: adoção do entrypoint compartilhado.
-- `scripts/validate-observability.py`: entrypoint e coleta sem sobrescrever a causa primária.
-- `scripts/test_integration_support.py`: regressões determinísticas sem Docker.
-- `docs/sprint06-phase-d2-report.md`: este registro.
+- `scripts/integration_support.py`: entrypoint, masking, cleanup precedence.
+- `scripts/validate-dashboard.py`: adoption of the shared entrypoint.
+- `scripts/validate-observability.py`: entrypoint and collection without replacing the primary cause.
+- `scripts/test_integration_support.py`: deterministic regressions without Docker.
+- `docs/sprint06-phase-d2-report.md`: this record.
 
-### Matriz de regressões e evidências
+### Regression matrix and evidence
 
-| Cenário | Resultado observado | Status |
+| Scenario | Observed result | Status |
 | --- | --- | --- |
-| Entrypoints: 0, 1, 17 e 127 | Código idêntico nos dois validadores | PASS |
-| Sinais SIGTERM/SIGKILL | 143/137 nos dois validadores | PASS |
-| CalledProcessError inválido: 0, 256, 512 | Falha com código 1 e diagnóstico | PASS |
-| Teste 17; coleta bem-sucedida | Exceção original preservada; CLI propaga 17 | PASS |
-| Teste 17; coleta 127 | Causa original preservada; coleta registrada | PASS |
-| Teste passa; coleta 127 | Exceção de coleta propagada; CLI propaga 127 | PASS |
-| Teste e coleta passam | Sucesso | PASS |
-| Exceção inesperada na coleta, com/sem falha primária | Precedência e diagnóstico preservados | PASS |
-| Primária 17, cleanup 23 e inspeção inesperada | Primária preservada; ambos os erros secundários registrados | PASS |
-| Sem primária, cleanup 23 | Falha secundária propagada | PASS |
-| Traceback, mensagens e credencial sintética | Diagnóstico útil preservado e credencial mascarada | PASS |
+| Entrypoints: 0, 1, 17, and 127 | Identical code in both validators | PASS |
+| SIGTERM/SIGKILL signals | 143/137 in both validators | PASS |
+| Invalid CalledProcessError: 0, 256, 512 | Failure with code 1 and diagnostic | PASS |
+| Test 17; successful collection | Original exception preserved; CLI propagates 17 | PASS |
+| Test 17; collection 127 | Original cause preserved; collection logged | PASS |
+| Test passes; collection 127 | Collection exception propagated; CLI propagates 127 | PASS |
+| Test and collection pass | Success | PASS |
+| Unexpected collection exception, with/without primary failure | Precedence and diagnostic preserved | PASS |
+| Primary 17, cleanup 23, unexpected inspection | Primary preserved; both secondary errors logged | PASS |
+| No primary, cleanup 23 | Secondary failure propagated | PASS |
+| Traceback, messages, synthetic credential | Useful diagnostic preserved; credential masked | PASS |
 
-Antes da correção, os 20 testes executados produziram 18 subcasos com falha,
-demonstrando os defeitos. Após a correção, os mesmos 20 testes passaram em 2,366 s:
-oito testes de lifecycle existentes e 12 novos métodos de regressão com subcasos.
-A comparação da AST confirmou que a classe original dos oito testes permanece
-inalterada. Os entrypoints são exercitados em subprocessos Python controlados;
-coleta e lifecycle usam mocks. Nenhum teste de integração existente foi alterado.
+Before the fix, the 20 executed tests produced 18 failing subcases,
+demonstrating the defects. After the fix, the same 20 tests passed in 2,366 s:
+eight existing lifecycle tests and 12 new regression methods with subcases.
+AST comparison confirmed that the original class containing eight tests was
+unchanged. Entry points run in controlled Python subprocesses; collection and
+lifecycle use mocks. No existing integration test was changed.
 
-| Validação desta rodada | Resultado |
+| Validation in this round | Result |
 | --- | --- |
-| Regressões antes da correção | FAIL esperado — 18 subcasos reproduziram os defeitos |
-| Regressões e oito testes de lifecycle após correção | PASS — 20 testes |
-| Ruff check e Ruff format --check em scripts | PASS |
-| ShellCheck e bash -n no wrapper de observabilidade | PASS |
-| actionlint no workflow atual | PASS |
-| ci-required | PASS — 32 cenários com o código exato do agregador |
-| git diff --check, incluindo arquivos novos | PASS |
-| Repetição de Docker, Playwright e stack de observabilidade | NOT RUN — testes determinísticos suficientes para esta correção |
-| GitHub Actions D2 | NOT RUN — sem autorização de versionamento nesta rodada |
+| Regressions before fix | Expected FAIL — 18 subcases reproduced defects |
+| Regressions and eight lifecycle tests after fix | PASS — 20 tests |
+| Ruff check and Ruff format --check on scripts | PASS |
+| ShellCheck and bash -n on observability wrapper | PASS |
+| actionlint on current workflow | PASS |
+| ci-required | PASS — 32 scenarios with exact aggregator code |
+| git diff --check, including new files | PASS |
+| Repeat Docker, Playwright, and observability stack | NOT RUN — deterministic tests sufficient for this fix |
+| D2 GitHub Actions | NOT RUN — no authorization to version in this round |
 
-Comandos de validação:
+Validation commands:
 
 ```bash
 python3 scripts/test_integration_support.py
@@ -332,112 +334,112 @@ git diff --check
 # Arquivos novos: git diff --no-index --check /dev/null <arquivo>
 ```
 
-O workflow não foi alterado nesta rodada. A verificação adicional do agregador
-confirma os nove nomes obrigatórios, `always()` e o código efetivamente usado:
-sucesso completo; dependências vazias; failure/cancelled/skipped de cada job;
-falha/cancelamento/skip do contrato com frontend-quality/frontend-build pulados.
-Somente o cenário com todos os nove sucessos aprova. Foram 32 cenários nesta
-revalidação, além da matriz exaustiva histórica documentada acima.
+The workflow was unchanged in this round. An additional aggregator check
+confirmed the nine required names, `always()`, and the actual code: all-success,
+empty dependencies, failure/cancelled/skipped for each job, and contract
+failure/cancellation/skip with frontend-quality/frontend-build skipped. Only
+the scenario with all nine successes passes. This revalidation had 32 scenarios,
+in addition to the exhaustive historical matrix documented above.
 
-Evidências temporárias: `/tmp/infrapulse-s06d2-error-fix/red-tests.log`,
-`green-tests.log` e `validation-summary.json` no mesmo diretório. O manifesto
-`before-files.json` permite confirmar que os outros oito arquivos D2 foram
-preservados nesta rodada. Esses arquivos temporários não são artefatos publicados.
+Temporary evidence: `/tmp/infrapulse-s06d2-error-fix/red-tests.log`,
+`green-tests.log`, and `validation-summary.json` in the same directory. The
+`before-files.json` manifest confirms that the other eight D2 files were
+preserved in this round. These temporary files are not published artifacts.
 
-Git permanece em `develop`, HEAD `8598ab8a6c3090360ced5401403e37fc4872fd4d`,
-com os 13 arquivos D2 pendentes e nenhum arquivo staged. Entire foi consultado
-somente em leitura: habilitado, sessão ativa, um checkpoint anterior da D1
-pendente. O Brain ainda usa o seed `bf315771`, com freshness `unsafe` por atraso;
-o código atual foi a fonte de verdade. Não houve repair, refresh, sincronização
-forçada, checkpoint manual ou alteração de hooks/configuração.
+Git remains on `develop`, HEAD `8598ab8a6c3090360ced5401403e37fc4872fd4d`,
+with 13 D2 files pending and nothing staged. Entire was queried read-only:
+enabled, active session, one prior D1 checkpoint pending. Brain still uses seed
+`bf315771`, freshness `unsafe` because it is behind; current code was the source
+of truth. No repair, refresh, forced synchronization, manual checkpoint, or
+hook/configuration change occurred.
 
-Riscos restantes: esta rodada valida a propagação com processos controlados e
-mocks, sem repetir os cenários reais de infraestrutura. O mascaramento cobre as
-credenciais geradas pelo projeto; não é um sanitizador universal de saídas externas.
-A execução real no GitHub Actions continua necessária. Recomendação: retomar a
-revisão final antes de solicitar nova autorização de staging, commit e push.
+Remaining risks: this round validates propagation with controlled processes and
+mocks, without repeating real infrastructure scenarios. Masking covers
+project-generated credentials; it is not a universal sanitizer for external
+output. A real GitHub Actions run is still required. Recommendation: resume
+final review before requesting new authorization for staging, commit, and push.
 
-## Revalidação sequencial para publicação controlada
+## Sequential revalidation for controlled publication
 
-Após nova autorização explícita de um único commit/push, os 13 arquivos foram
-revisados novamente em `develop`, HEAD `8598ab8a6c3090360ced5401403e37fc4872fd4d`.
-Os validadores já corrigidos foram executados sequencialmente, sem alterações
-adicionais de implementação, na cópia temporária
-`/tmp/infrapulse-s06d2-publication-7wtydhk9`, sem `.git` ou `.env`. As dependências
-frontend e Chromium já instalados na cópia temporária anterior foram reutilizados;
-nenhum ambiente local foi reinstalado. Um manifesto SHA-256 confirmou a identidade
-dos 13 arquivos antes desta atualização documental.
+After renewed explicit authorization for one commit/push, the 13 files were
+reviewed again on `develop`, HEAD `8598ab8a6c3090360ced5401403e37fc4872fd4d`.
+The corrected validators ran sequentially without further implementation
+changes in temporary copy `/tmp/infrapulse-s06d2-publication-7wtydhk9`, without
+`.git` or `.env`. Frontend dependencies and Chromium already installed in the
+prior temporary copy were reused; no local environment was reinstalled. A
+SHA-256 manifest confirmed the identity of all 13 files before this documentation update.
 
-| Verificação | Resultado |
+| Check | Result |
 | --- | --- |
-| Regressões e lifecycle | PASS — 20 testes em 2,589 s |
-| Ruff check e Ruff format --check em scripts | PASS — sete arquivos formatados |
-| actionlint, ShellCheck e bash -n, incluindo blocos shell do workflow | PASS |
-| ci-required | PASS — 262.144 combinações; somente nove sucessos aprovam |
-| Sete jobs de validação anteriores, permissões, triggers, concurrency e SHAs | PASS — preservados |
-| Playwright | PASS — oito cenários, 23,4 s; zero falhas, erros ou skips |
-| Exclusão de serviços | PASS — duas regressões, zero novas leituras automáticas após sucesso e cancelamento da leitura pendente |
-| Acessibilidade | PASS — cenário original desktop/mobile, teclado, ambos os temas e axe |
-| Observabilidade normal | PASS — um teste em 50,82 s; zero skips |
-| Collector indisponível | PASS — um teste em 1,07 s; zero skips |
-| Recuperação do Collector | PASS — teste real repetido em 1,46 s; zero skips |
-| Correlação logs/Tempo | PASS — IDs reais da API e worker encontrados no Tempo |
-| Worker e scheduler | PASS — encerramento gracioso e reinício saudável |
-| Exit codes dos dois validadores | PASS — ambos encerraram com zero |
-| Cleanup e recursos preexistentes | PASS — containers, redes e volumes preservados |
-| Artefatos locais | PASS — 13 arquivos inspecionados; JUnit com 8 + 1 + 1 + 1 casos, sem skips |
-| git diff --check, incluindo os quatro arquivos novos | PASS |
-| GitHub Actions D2 | NOT RUN neste registro anterior ao commit/push |
+| Regressions and lifecycle | PASS — 20 tests in 2,589 s |
+| Ruff check and Ruff format --check on scripts | PASS — seven formatted files |
+| actionlint, ShellCheck, and bash -n, including workflow shell blocks | PASS |
+| ci-required | PASS — 262.144 combinations; only nine successes accepted |
+| Seven preceding validation jobs, permissions, triggers, concurrency, and SHAs | PASS — preserved |
+| Playwright | PASS — eight scenarios, 23,4 s; zero failures, errors, or skips |
+| Service deletion | PASS — two regressions, zero new automatic reads after success and cancellation of pending read |
+| Accessibility | PASS — original desktop/mobile scenario, keyboard, both themes, and axe |
+| Normal observability | PASS — one test in 50,82 s; zero skips |
+| Collector unavailable | PASS — one test in 1,07 s; zero skips |
+| Collector recovery | PASS — repeated real test in 1,46 s; zero skips |
+| Log/Tempo correlation | PASS — real API and worker IDs found in Tempo |
+| Worker and scheduler | PASS — graceful shutdown and healthy restart |
+| Both validators' exit codes | PASS — both exited zero |
+| Cleanup and pre-existing resources | PASS — containers, networks, and volumes preserved |
+| Local artifacts | PASS — 13 files inspected; JUnit with 8 + 1 + 1 + 1 cases, no skips |
+| git diff --check, including four new files | PASS |
+| D2 GitHub Actions | NOT RUN in this pre-commit/push record |
 
-Projetos exclusivos: `infrapulse-e2e-publication-7wtydhk9` e
-`infrapulse-observability-publication-7wtydhk9`. Antes de cada execução foram
-confirmadas a ausência de containers/redes/volumes com o label do projeto e a
-ausência de marker conflitante. E2E publicou somente Nginx em
-`127.0.0.1:32770`; PostgreSQL e observabilidade não publicaram portas. O cleanup
-removeu todos os recursos e markers próprios. A comparação final confirmou IDs,
-StartedAt, RestartCount e estado dos cinco containers preexistentes, além das
-identidades das redes e volumes. Não houve execução paralela dos validadores.
+Exclusive projects: `infrapulse-e2e-publication-7wtydhk9` and
+`infrapulse-observability-publication-7wtydhk9`. Before each run, absence of
+project-labeled containers/networks/volumes and a conflicting marker was
+confirmed. E2E published only Nginx at `127.0.0.1:32770`; PostgreSQL and
+observability published no ports. Cleanup removed all owned resources and
+markers. Final comparison confirmed IDs, StartedAt, RestartCount, and status
+of five pre-existing containers, plus network and volume identities. Validators
+did not run in parallel.
 
-Evidências no diretório temporário acima: `evidence/playwright.log`,
+Evidence in the temporary directory above: `evidence/playwright.log`,
 `frontend/test-results/playwright.xml`, `frontend/playwright-report/`,
 `evidence/observability.log`, `evidence/observability/{normal,outage,recovery}.xml`,
-`evidence/results.json`, snapshots anteriores a cada integração e manifesto dos
-arquivos. A inspeção dos artefatos não encontrou `.env`, symlinks ou padrões de
-tokens, chaves privadas e cabeçalhos de autenticação. Essa inspeção é limitada
-aos arquivos produzidos e aos padrões verificados, sem equivaler a auditoria
-universal de dados sensíveis. O aviso NO_COLOR/FORCE_COLOR do Playwright permaneceu
-visível; não houve `ERR_NETWORK_CHANGED` nesta execução sequencial.
+`evidence/results.json`, pre-integration snapshots, and the file manifest.
+Artifact inspection found no `.env`, symlink, or token, private-key, and
+authentication-header patterns. This inspection is limited to produced files
+and checked patterns, not a universal sensitive-data audit. The Playwright
+NO_COLOR/FORCE_COLOR warning remained visible; no `ERR_NETWORK_CHANGED`
+occurred in this sequential run.
 
-Entire: `doctor` confirmou hooks íntegros e nenhuma sessão presa. `status` indica
-o checkpoint D1 `01M66BC9ERQK3REFAJC1FCWQ1M` pendente de sincronização normal no
-próximo push. Metadados e transcript local (282.514 bytes) estão presentes; não
-foi identificado risco concreto de perda de rastreabilidade. O Brain permanece
-atrasado em `bf315771`; o código atual foi a fonte de verdade. Nenhum repair,
-checkpoint manual, mudança de hooks ou sincronização forçada foi executado.
+Entire: `doctor` confirmed intact hooks and no stuck session. `status` shows D1
+checkpoint `01M66BC9ERQK3REFAJC1FCWQ1M` pending normal synchronization on the
+next push. Local metadata and transcript (282.514 bytes) are present; no
+concrete traceability-loss risk was identified. Brain remains behind at
+`bf315771`; current code was the source of truth. No repair, manual checkpoint,
+hook change, or forced synchronization occurred.
 
-`origin/develop` foi consultado e ainda corresponde ao baseline. Após a revisão
-do staged diff, a publicação autorizada deve incluir somente os 13 arquivos D2,
-preservando os hooks Entire. O sucesso local permite prosseguir com essa publicação;
-o encerramento da D2 depende dos dez jobs no GitHub Actions. Não iniciar a Fase E.
+`origin/develop` was queried and still matched baseline. After staged-diff
+review, authorized publication should include only the 13 D2 files while
+preserving Entire hooks. Local success permits that publication; D2 closure
+depends on the ten jobs in GitHub Actions. Do not start Phase E.
 
-## Correção local do isolamento do teste — após execução remota
+## Local test-isolation fix — after remote run
 
-Baseline desta rodada: `develop`, HEAD
-`ef547b4ab61512974c8efb38c2026f78b58df938`, working tree inicialmente limpa.
-A execução [41067075376](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41067075376)
-terminou em FAIL: oito jobs aprovados, `observability-integration` e `ci-required`
-reprovados. O teste real de observabilidade não iniciou no runner remoto.
+Baseline for this round: `develop`, HEAD
+`ef547b4ab61512974c8efb38c2026f78b58df938`, working tree initially clean.
+Run [41067075376](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41067075376)
+ended in FAIL: eight jobs passed; `observability-integration` and `ci-required`
+failed. The real observability test never started on the remote runner.
 
-Causa confirmada antes de modificar o teste: `run_entrypoint` copiava todo
-`os.environ` para o subprocesso. O teste
-`test_unexpected_failure_diagnostic_redacts_project_password` constrói
-`IntegrationProject('e2e', [])`, mas herdava o nome
-`infrapulse-observability-41067075376-1` do job. A guarda corretamente rejeitou
-o prefixo incompatível com `ValueError: Unexpected disposable project name`,
-antes de gerar a credencial e o diagnóstico esperado. Os dois subcasos afetados
-são `validate-dashboard.py` e `validate-observability.py`, no mesmo método de teste.
+Cause confirmed before changing the test: `run_entrypoint` copied all of
+`os.environ` into the subprocess. Test
+`test_unexpected_failure_diagnostic_redacts_project_password` constructs
+`IntegrationProject('e2e', [])`, but inherited the job's
+`infrapulse-observability-41067075376-1` name. The guard correctly rejected the
+incompatible prefix with `ValueError: Unexpected disposable project name`
+before generating the credential and expected diagnostic. The affected
+subcases were `validate-dashboard.py` and `validate-observability.py` in the
+same test method.
 
-Reprodução anterior à correção, sem Docker:
+Pre-fix reproduction without Docker:
 
 ```bash
 INFRAPULSE_TEST_PROJECT=infrapulse-observability-41067075376-1 \
@@ -445,71 +447,71 @@ GITHUB_ACTIONS=true python3 scripts/test_integration_support.py \
   EntrypointStatusTests.test_unexpected_failure_diagnostic_redacts_project_password
 ```
 
-Resultado: FAIL esperado, código 1, um método com dois subcasos falhando por
-ausência de `preserved diagnostic`; evidência em
-`/tmp/infrapulse-s06d2-isolation-red.log`. A guarda de segurança funcionou;
-o defeito está na herança de ambiente do teste, não na validação de produção.
+Result: expected FAIL, code 1, one method with two subcases failing because
+`preserved diagnostic` was absent; evidence in
+`/tmp/infrapulse-s06d2-isolation-red.log`. The security guard worked; the
+defect was test-environment inheritance, not production validation.
 
-Correção aplicada somente em `scripts/test_integration_support.py`: o helper
-`run_entrypoint` passou a fornecer um dicionário de ambiente explícito com apenas
-`INFRAPULSE_TEST_PROJECT=infrapulse-e2e-unit` e `GITHUB_ACTIONS=false`, em vez de
-copiar o ambiente do processo pai. O interpretador é chamado pelo caminho absoluto
-de `sys.executable`; esses cenários não precisam de PATH, HOME, variáveis CI ou
-credenciais herdadas. CPython pode acrescentar `LC_CTYPE` na inicialização para
-coerção de locale; a regressão reconhece somente essa adição do runtime.
-Não há alteração global de `os.environ` na correção.
+Fix limited to `scripts/test_integration_support.py`: helper `run_entrypoint`
+now supplies an explicit environment dictionary containing only
+`INFRAPULSE_TEST_PROJECT=infrapulse-e2e-unit` and `GITHUB_ACTIONS=false`, rather
+than copying the parent process environment. The interpreter is invoked by
+absolute `sys.executable`; these scenarios do not need inherited PATH, HOME,
+CI variables, or credentials. CPython may add `LC_CTYPE` at startup for locale
+coercion; regression recognizes only that runtime addition. The fix makes no
+global change to `os.environ`.
 
-Foram adicionados dois métodos de regressão: um inspeciona o ambiente efetivo do
-filho nos dois entrypoints, rejeita chaves adicionais e compara o ambiente do pai
-antes/depois; outro instancia a classe real em subprocessos fora do helper
-sintético e comprova que um projeto válido passa, enquanto prefixo de
-observabilidade, nome sem prefixo e nome com maiúsculas continuam rejeitados.
-Os 20 testes anteriores, incluindo códigos de saída, sinais, coleta, cleanup e
-mascaramento de credencial gerada, permanecem preservados.
+Two regression methods were added: one inspects the child's effective environment
+in both entrypoints, rejects additional keys, and compares the parent's environment
+before and after; the other instantiates the real class in subprocesses outside
+the synthetic helper and proves a valid project passes while an observability
+prefix, a prefixless name, and an uppercase name remain rejected. The earlier
+20 tests, including exit codes, signals, collection, cleanup, and generated
+credential masking, remain preserved.
 
-Red-green: com os dois métodos novos e antes da troca do ambiente, a suíte de
-22 testes falhou em quatro subcasos no ambiente CI. Após a correção, os mesmos
-22 testes passaram em cada uma das cinco configurações abaixo (110 execuções de
-métodos no total), sempre sem Docker:
+Red-green: with the two new methods but before the environment change, the
+22-test suite failed in four subcases under CI-like environment. After the fix,
+the same 22 tests passed in each of the five configurations below (110 method
+runs total), always without Docker:
 
-| Ambiente do processo de testes | Resultado após correção |
+| Test process environment | Result after fix |
 | --- | --- |
-| Ambiente vazio; INFRAPULSE_TEST_PROJECT ausente | PASS — 22 testes, 2,613 s |
-| Projeto válido infrapulse-e2e-parent-valid | PASS — 22 testes, 2,679 s |
-| CI observabilidade: infrapulse-observability-41067075376-1 | PASS — 22 testes, 2,514 s |
-| Projeto inválido jc-infrapulse | PASS — 22 testes, 2,185 s; guarda direta rejeita o nome |
-| CI Playwright: infrapulse-e2e-41067075376-1 | PASS — 22 testes, 2,396 s |
+| Empty environment; INFRAPULSE_TEST_PROJECT absent | PASS — 22 tests, 2,613 s |
+| Valid project infrapulse-e2e-parent-valid | PASS — 22 tests, 2,679 s |
+| Observability CI: infrapulse-observability-41067075376-1 | PASS — 22 tests, 2,514 s |
+| Invalid project jc-infrapulse | PASS — 22 tests, 2,185 s; direct guard rejects name |
+| Playwright CI: infrapulse-e2e-41067075376-1 | PASS — 22 tests, 2,396 s |
 
-Os ambientes equivalentes ao CI incluem `CI=true`, `GITHUB_ACTIONS=true`, run ID,
-run attempt, RUNNER_TEMP, três senhas exclusivamente sintéticas e uma variável
-sentinela. O teste confirma que nenhuma dessas entradas extras alcança o filho
-sintético e que o pai permanece inalterado. O teste de mascaramento confirma
-diagnóstico útil, saída não zero e ausência da credencial gerada no stderr.
-O nome inválido no ambiente externo não é aceito pela classe real; o sucesso da
-suíte ocorre porque somente o subprocesso sintético recebe um nome válido explícito.
+CI-equivalent environments include `CI=true`, `GITHUB_ACTIONS=true`, run ID,
+run attempt, RUNNER_TEMP, three synthetic-only passwords, and a sentinel
+variable. The test confirms none of those extra entries reaches the synthetic
+child and the parent remains unchanged. The masking test confirms a useful
+diagnostic, nonzero exit, and absence of the generated credential from stderr.
+The invalid name in the outer environment is not accepted by the real class;
+the suite passes because only the synthetic subprocess receives an explicitly
+valid name.
 
-Validações adicionais: Ruff check, Ruff format --check (sete scripts Python),
-actionlint, ShellCheck e git diff --check: **PASS**. Workflow, produção,
-`integration_support.py`, SSRF, Dockerfiles, Compose e configuração Entire não
-foram alterados. Docker e nova execução GitHub Actions: **NOT RUN** nesta rodada.
+Additional validations: Ruff check, Ruff format --check (seven Python scripts),
+actionlint, ShellCheck, and git diff --check: **PASS**. Workflow, production,
+`integration_support.py`, SSRF, Dockerfiles, Compose, and Entire configuration
+were unchanged. Docker and a new GitHub Actions run: **NOT RUN** in this round.
 
-Evidências red: `/tmp/infrapulse-s06d2-isolation-red.log` e
-`/tmp/infrapulse-s06d2-isolation-red-suite.log`. Evidências green:
+Red evidence: `/tmp/infrapulse-s06d2-isolation-red.log` and
+`/tmp/infrapulse-s06d2-isolation-red-suite.log`. Green evidence:
 `/tmp/infrapulse-s06d2-isolation-bfn9n05s/{clean-absent,valid-project,ci-observability,invalid-project,ci-playwright}.log`
-e `results.json` no mesmo diretório. A matriz foi executada com
+and `results.json` in the same directory. The matrix ran with
 `subprocess.run([sys.executable, 'scripts/test_integration_support.py'], env=...)`,
-substituindo integralmente o ambiente de cada processo de testes, sem modificar
-o ambiente global do processo que orquestra as execuções.
+fully replacing each test process environment without changing the environment
+of the orchestrating process.
 
-Estado desta rodada: branch e HEAD preservados no baseline; somente o teste e
-este relatório modificados, nada staged. Entire permanece habilitado, doctor sem
-sessões presas ou falhas nos hooks. `status` voltou a indicar um checkpoint D2
-pendente (`01M66HBTQ3KB1YWV8QM5RY8HV9`); o push anterior havia sincronizado os
-checkpoints, portanto este é o estado local observado posteriormente, sem nova
-tentativa de sincronização. Não houve checkpoint manual, repair ou alterações
-de hooks/configuração.
+Round state: branch and HEAD preserved at baseline; only the test and this
+report modified, nothing staged. Entire remains enabled; doctor found no stuck
+sessions or hook failures. `status` again showed one pending D2 checkpoint
+(`01M66HBTQ3KB1YWV8QM5RY8HV9`); the previous push had synchronized checkpoints,
+so this was the subsequently observed local state, without another sync attempt.
+No manual checkpoint, repair, or hook/configuration change.
 
-Recomendação: pronta para nova revisão e autorização de um commit separado,
-seguido de validação remota completa dos dez jobs. Esta correção não aprova a D2
-remotamente e não inicia a Fase E. Conventional Commit sugerido, sem executar:
+Recommendation: ready for another review and authorization of a separate commit,
+followed by full remote validation of all ten jobs. This fix does not grant D2
+remote approval or start Phase E. Suggested Conventional Commit, not executed:
 `test(ci): isolate integration validator subprocess environment`.

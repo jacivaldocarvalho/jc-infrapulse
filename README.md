@@ -97,6 +97,17 @@ The Compose configuration is intended for local development, not a hardened publ
 - [Frontend operations](docs/operations/frontend.md)
 - [CI evidence and provenance](docs/ci-evidence-f3c2.md)
 
+## Project resources
+
+- [Documentation index](docs/README.md): entry point for architecture, decisions, operations, and sprint history.
+- [Contributing guide](CONTRIBUTING.md): development workflow and pull request guidance.
+- [Security policy](SECURITY.md): private vulnerability reporting guidance.
+- [Changelog](CHANGELOG.md): changes recorded from Git history.
+- [EditorConfig](.editorconfig): shared basic editor settings.
+- [Pull request template](.github/PULL_REQUEST_TEMPLATE.md): prompts for change summaries and verification.
+
+The MIT license is described below.
+
 ## License
 
 InfraPulse is released under the [MIT License](LICENSE). Third-party components retain their own licenses and notices.

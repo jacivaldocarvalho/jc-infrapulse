@@ -1,50 +1,25 @@
-# ADR 0003 — Dashboard SPA sobre os contratos REST existentes
+# ADR 0003 — SPA dashboard over existing REST contracts
 
-Status: aceito para a Sprint 05, conforme arquitetura e ajustes aprovados.
+Status: accepted for Sprint 05, subject to the approved architecture and adjustments.
 
-## Contexto
+## Context
 
-O backend oferece CRUD paginado, último estado e histórico/métricas por serviço.
-Não há resumo global de estados, pesquisa textual ou endpoint de séries temporais.
-SSRF, isolamento do PostgreSQL, worker único e telemetria interna são invariantes.
+The backend provides paginated CRUD, latest status, and per-service history and metrics. It has no global status summary, text search, or time-series endpoint. SSRF protection, PostgreSQL isolation, a single worker, and internal telemetry are invariants.
 
-## Decisão
+## Decision
 
-Implementar uma SPA React/TypeScript/Vite, React Router declarativo, TanStack Query
-e Mantine. Usar Mantine Form e Mantine Charts/Recharts para reduzir integrações
-visuais independentes. Separar páginas, features e código compartilhado; manter
-estado remoto no Query e filtros/paginação na URL. Carregar páginas e gráficos
-sob demanda. Não introduzir gerenciador global de estado nem autenticação.
+Implement a React/TypeScript/Vite SPA with declarative React Router, TanStack Query, and Mantine. Use Mantine Form and Mantine Charts/Recharts to reduce independent visual integrations. Separate pages, features, and shared code; keep remote state in Query and filters and pagination in the URL. Load pages and charts on demand. Do not introduce a global state manager or authentication.
 
-Gerar tipos com openapi-typescript a partir de `app.openapi()` no checkout atual,
-sem servidor/lifespan/banco. Usar openapi-fetch com a origem do navegador e erros
-normalizados, incluindo os formatos distintos de 422 existentes no backend.
-Typescript não constitui validação de respostas em runtime; o backend permanece a
-fonte de verdade. Aplicar regras locais de formulário para feedback imediato.
+Generate types with openapi-typescript from `app.openapi()` in the current checkout, without a server, lifespan, or database. Use openapi-fetch with the browser origin and normalized errors, including the backend's distinct existing 422 formats. TypeScript does not validate responses at runtime; the backend remains the source of truth. Apply local form rules for immediate feedback.
 
-Distinguir inventário global e estados exclusivos da página, atividade e resultado,
-erro de consulta e resultado DOWN. Preservar nulos e as definições de disponibilidade
-e p95 do backend. Consultar o p95 completo separadamente das 12 janelas dos gráficos.
-Limitar todas as consultas de métricas a quatro simultâneas com fila cancelável.
+Distinguish the global inventory from page-specific exclusive states, activity from result, query errors from DOWN results. Preserve null values and the backend definitions of availability and p95. Query full-window p95 separately from the 12 chart windows. Limit all metrics requests to four concurrent requests with a cancelable queue.
 
-Fazer polling apenas dos dados atuais visíveis, com pausa em segundo plano. Fixar
-janelas históricas e não fazer polling/refetch por foco dessas consultas. Atualizar
-explicitamente a janela e invalidar caches após mutações. Não presumir snapshot
-entre chamadas ou imutabilidade absoluta dos dados históricos persistidos.
+Poll only visible current data, pausing in the background. Use fixed historical windows, with no polling or focus-based refetch for those queries. Refresh the window explicitly and invalidate caches after mutations. Do not assume a snapshot across requests or absolute immutability of persisted historical data.
 
-Servir a SPA com Nginx sem privilégios e proxy restrito às rotas usadas pelo produto.
-Manter `127.0.0.1:8080` como único binding do frontend e acesso somente à rede HTTP
-da API. Não adicionar CORS ou alterar backend/contratos. Usar PostgreSQL em tmpfs e
-projetos descartáveis para E2E com Playwright, além de testes Vitest/RTL/MSW e axe.
+Serve the SPA with unprivileged Nginx and a proxy restricted to routes the product uses. Keep `127.0.0.1:8080` as the frontend's only binding and provide access only to the API's HTTP network. Do not add CORS or change the backend or its contracts. Use PostgreSQL in tmpfs and disposable projects for Playwright E2E, alongside Vitest/RTL/MSW and axe tests.
 
-## Consequências
+## Consequences
 
-Mantine acelera consistência e acessibilidade, com dependência do seu sistema de
-estilos e necessidade de verificar contraste real. Gráficos aumentam consultas;
-o carregamento sob demanda, cache e limite de concorrência controlam esse custo.
-Não prometemos resumo global de estado ou filtros inexistentes na API. Antes de
-ampliar escala, aprovar desenho de agregação/lote e orçamento de carga.
+Mantine speeds up consistency and accessibility, with a dependency on its styling system and a need to verify actual contrast. Charts increase query volume; on-demand loading, caching, and the concurrency limit control that cost. No global status summary or filters absent from the API are promised. Before scaling, approve an aggregation or batching design and load budget.
 
-A SPA não depende da disponibilidade do Collector ou de acesso do navegador à
-telemetria. A stack permanece local, sem autenticação e sem exposição pública.
-Uma publicação externa exigirá decisão específica de acesso e segurança.
+The SPA does not depend on Collector availability or browser access to telemetry. The stack remains local, without authentication or public exposure. External publication will require a specific access and security decision.

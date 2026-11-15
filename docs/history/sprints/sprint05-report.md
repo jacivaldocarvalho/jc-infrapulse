@@ -1,118 +1,118 @@
 # Sprint 05 — Frontend Dashboard
 
-Data: 2026-10-30. Branch: `develop`. Base: `7456565`.
+Date: 2026-10-30. Branch: `develop`. Base: `7456565`.
 
-## Entrega
+## Delivery
 
-Implementada uma SPA React/TypeScript/Vite com React Router, TanStack Query,
-Mantine Core/Form e Mantine Charts/Recharts. A interface oferece inventário,
-CRUD de serviços, estado atual, métricas por período, histórico paginado,
-gráficos sob demanda, filtros existentes na API, atualização periódica de dados
-atuais, temas claro/escuro e layout responsivo.
+Implemented a React/TypeScript/Vite SPA with React Router, TanStack Query,
+Mantine Core/Form, and Mantine Charts/Recharts. The interface provides inventory,
+service CRUD, current status, period metrics, paginated history, on-demand charts,
+filters supported by the API, periodic refresh of current data, light/dark themes,
+and a responsive layout.
 
-O backend, suas dependências, migrações e contratos permaneceram intactos. Nenhum
-endpoint foi criado. Não foram implementadas autenticação ou autorização.
+The backend, its dependencies, migrations, and contracts remained unchanged. No
+endpoint was added. Authentication and authorization were not implemented.
 
-## Execução incremental — Fase 2
+## Incremental execution — Phase 2
 
-| Incremento | Entrega | Verificação executada antes da entrega seguinte |
+| Increment | Delivery | Check performed before the next delivery |
 | --- | --- | --- |
-| 1 | Fundação, layout, navegação e temas | TypeScript, lint e teste de componente |
-| 2 | OpenAPI offline, cliente tipado e erros | Geração real, testes MSW de 204/422/cancelamento e semaphore |
-| 3 | Listagem, filtros e escopos | Testes de totais globais, serviços visíveis, vazio e atualização com erro |
-| 4 | Cadastro, edição e exclusão | Regras temporais, PATCH mínimo, 422 do backend e confirmação |
-| 5 | Detalhe, métricas, histórico e gráficos | Build, regras de período/nulos e testes de integração HTTP simulada |
-| 6 | Cache, polling e atualização | Testes de ausência de polling histórico e limite de quatro consultas reais no MSW |
-| 7 | Docker/Nginx/Compose e documentação | Build multiestágio, Nginx real, PostgreSQL/worker, Playwright e regressões |
+| 1 | Foundation, layout, navigation, and themes | TypeScript, lint, and component test |
+| 2 | Offline OpenAPI, typed client, and errors | Real generation, MSW tests for 204/422/cancellation, and semaphore |
+| 3 | Lists, filters, and scopes | Tests of global totals, visible services, empty state, and error refresh |
+| 4 | Registration, editing, and deletion | Temporal rules, minimal PATCH, backend 422, and confirmation |
+| 5 | Details, metrics, history, and charts | Build, period/null rules, and mocked HTTP integration tests |
+| 6 | Cache, polling, and refresh | Tests showing no historical polling and a limit of four actual MSW queries |
+| 7 | Docker/Nginx/Compose and documentation | Multi-stage build, real Nginx, PostgreSQL/worker, Playwright, and regressions |
 
-Os testes do primeiro incremento tinham um cenário; a suíte cresceu a 19 testes
-em oito arquivos. As verificações foram repetidas quando mudanças ou falhas
-justificaram uma nova execução.
+Tests in the first increment had one scenario; the suite grew to 19 tests in
+eight files. Checks were repeated when changes or failures warranted another run.
 
-## Contratos e semântica
+## Contracts and semantics
 
-O contrato foi conferido em rotas, schemas, repositórios e no OpenAPI 3.1 gerado
-em memória pela aplicação atual (oito caminhos, onze operações).
-`scripts/export-openapi.py` não inicia lifespan, servidor, conexões ou worker.
-A geração TypeScript é reproduzível com dependências fixadas e também integra o
-build Docker. Duas gerações consecutivas produziram o mesmo SHA256:
+The contract was checked against routes, schemas, repositories, and OpenAPI 3.1
+generated in memory by the current application (eight paths, eleven operations).
+`scripts/export-openapi.py` does not start a lifespan, server, connections, or
+worker. TypeScript generation is reproducible with pinned dependencies and also
+part of the Docker build. Two consecutive generations produced the same SHA256:
 
 ```text
 266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34
 ```
 
-Inventário global usa os totais de listagens; UP/DOWN/sem dados e erros são
-contagens explicitamente limitadas à página. Atividade é independente do resultado.
-Erros de consulta não contam como DOWN nem como ausência de histórico. Dados
-anteriores são preservados com aviso de desatualização.
+The global inventory uses list totals; UP/DOWN/no data and errors are counts
+explicitly limited to the visible page. Activity is independent of the result.
+Query errors count neither as DOWN nor as missing history. Prior data is retained
+with a stale-data notice.
 
-Disponibilidade é proporção de checks UP, sem ponderação temporal. Valores ausentes
-não são convertidos em zero. O p95 do período vem da consulta integral, nunca de
-percentis de janelas individuais. Durações incluem as falhas conforme o backend.
-Datas são transmitidas em UTC e exibidas com indicação de horário local.
+Availability is the share of UP checks without time weighting. Missing values
+are not converted to zero. Period p95 comes from the full-period query, never
+from individual-window percentiles. Durations include failures, as in the backend.
+Dates are transmitted in UTC and displayed with the local time zone indicated.
 
-Métricas e gráficos compartilham limite global de quatro requisições simultâneas.
-A fila e as requisições recebem cancelamento. Somente serviços visíveis recebem
-consultas de estado. Janelas históricas ficam fixas em cache, sem polling/refetch
-por foco ou reconexão; o usuário pode avançar explicitamente o período.
+Metrics and charts share a global limit of four concurrent requests. The queue
+and requests support cancellation. Only visible services receive status queries.
+Historical windows remain fixed in cache, without focus or reconnection polling/
+refetch; users can explicitly advance the period.
 
-## Resultados executados — Fase 3
+## Results observed — Phase 3
 
-| Verificação | Resultado |
+| Check | Result |
 | --- | --- |
-| Vitest + Testing Library + MSW | 19 testes aprovados em oito arquivos |
-| Playwright Chromium contra Nginx/FastAPI/PostgreSQL/worker reais | 6 cenários aprovados |
-| Axe WCAG 2 A/AA e 2.1 AA, dashboard claro e escuro | Nenhuma violação detectada nos cenários auditados |
-| TypeScript `tsc --noEmit` | Sem erros, incluindo código E2E |
-| ESLint | Sem erros ou avisos na execução final |
-| Prettier | Todos os arquivos correspondentes formatados |
-| Build Vite de produção | Aprovado, com páginas e gráficos sob demanda |
-| pytest local | 184 aprovados, 13 omitidos por dependerem de integração |
-| pytest em PostgreSQL 17 descartável | 195 aprovados, 2 omitidos por dependerem da stack de observabilidade |
-| Ruff backend | Lint e formatação aprovados, 52 arquivos |
-| mypy backend | Sem problemas em 52 arquivos |
-| `pip check` | Nenhuma dependência quebrada |
-| Ruff dos quatro scripts Python novos/alterados | Lint e formatação aprovados |
-| Stack real de observabilidade | Cenário normal e cenário Collector indisponível aprovados |
-| Compose principal e Compose E2E | Configuração validada sem utilizar ou imprimir senhas locais |
-| Nginx no container | `nginx -t` aprovado |
-| Portas/rede/usuário reais | Frontend em 127.0.0.1:8080, usuário 101, filesystem somente leitura, rede apenas HTTP |
-| Busca direcionada no bundle | Ausência dos marcadores verificados de credenciais, telemetria e destino privado de teste |
-| `git diff --check` | Sem erros |
+| Vitest + Testing Library + MSW | 19 tests passed in eight files |
+| Playwright Chromium against real Nginx/FastAPI/PostgreSQL/worker | 6 scenarios passed |
+| Axe WCAG 2 A/AA and 2.1 AA, light and dark dashboard | No violations detected in audited scenarios |
+| TypeScript `tsc --noEmit` | No errors, including E2E code |
+| ESLint | No errors or warnings in the final run |
+| Prettier | All matching files formatted |
+| Production Vite build | Passed, with on-demand pages and charts |
+| Local pytest | 184 passed, 13 skipped because they require integration |
+| pytest in disposable PostgreSQL 17 | 195 passed, 2 skipped because they require the observability stack |
+| Backend Ruff | Lint and format passed, 52 files |
+| Backend mypy | No issues in 52 files |
+| `pip check` | No broken dependencies |
+| Ruff on four new/modified Python scripts | Lint and format passed |
+| Real observability stack | Normal and unavailable-Collector scenarios passed |
+| Main and E2E Compose | Configuration validated without using or printing local passwords |
+| Container Nginx | `nginx -t` passed |
+| Actual ports/network/user | Frontend on 127.0.0.1:8080, user 101, read-only filesystem, HTTP-only network |
+| Targeted bundle search | No checked markers for credentials, telemetry, or the private test target |
+| `git diff --check` | No errors |
 
-O build local produziu aproximadamente 123 kB gzip para o chunk principal e
-118 kB gzip para gráficos, carregados separadamente; CSS principal aproximadamente
-36 kB gzip. Esses tamanhos não constituem medição de desempenho em produção.
+The local build produced approximately 123 kB gzip for the main chunk and
+118 kB gzip for charts, loaded separately; main CSS was approximately 36 kB gzip.
+These sizes are not production performance measurements.
 
-### Evidências de navegador
+### Browser evidence
 
-1. Cadastro pela interface com destino HTTP controlado, persistência PostgreSQL,
-   UP real do worker, edição, inativação, reload, cancelamento e confirmação de
-   exclusão. GET do serviço e checks retornaram 404 após exclusão.
-2. Histórico determinístico: 25 checks, 20 UP e 5 TIMEOUT, disponibilidade de 80%,
-   média de 22 ms e p95 de 32,8 ms, conferidos na API e na interface. Paginação
-   exibiu 20 e depois 5 resultados. Gráficos fizeram 12 consultas por janela.
-3. Ausência de histórico: disponibilidade/latências ausentes, tabela vazia e
-   gráficos sem dados. Período inválido apresentou erro recuperável.
-4. Totais globais de 24 serviços separados dos 20/4 registros nas páginas.
-   Erro 503 de atualização preservou o último dado e saiu das contagens de estado.
-   Filtro de ativos funcionou pela API e reiniciou a paginação.
-5. Proxy rejeitou diagnósticos, métricas internas, rotas desconhecidas e métodos
-   não autorizados. Cadastro de metadata IP retornou 422 pela política SSRF real.
-   Cabeçalhos CSP e nosniff foram verificados no HTML servido pelo Nginx.
-6. Teclado, link para conteúdo, foco e título abaixo do cabeçalho fixo, navegação
-   móvel a 390×844, ausência de overflow na página, temas e auditoria axe.
+1. Registration through the interface with a controlled HTTP destination,
+   PostgreSQL persistence, a real worker UP result, editing, deactivation,
+   reload, cancellation, and deletion confirmation. Service GET and checks
+   returned 404 after deletion.
+2. Deterministic history: 25 checks, 20 UP and 5 TIMEOUT, 80% availability,
+   22 ms mean and 32,8 ms p95, checked in the API and interface. Pagination
+   showed 20 then 5 results. Charts made 12 queries per window.
+3. No history: absent availability/latencies, empty table, and charts without
+   data. An invalid period produced a recoverable error.
+4. Global totals of 24 services separate from the 20/4 records on the pages.
+   A 503 refresh error retained the latest data and was excluded from status counts. The active
+   filter used the API and reset pagination.
+5. The proxy rejected diagnostics, internal metrics, unknown routes, and
+   unauthorized methods. Registration of a metadata IP returned 422 under the
+   real SSRF policy. CSP and nosniff headers were checked in Nginx-served HTML.
+6. Keyboard, skip-to-content link, focus and heading below the fixed header,
+   mobile navigation at 390×844, no page overflow, themes, and axe auditing.
 
-Capturas locais, ignoradas pelo Git:
+Local captures, ignored by Git:
 
-- [Dashboard claro](../../../frontend/test-results/dashboard-visible-scope-fi-07b8a-ion-and-stale-update-errors/dashboard-light.png)
-- [Dashboard escuro](../../../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-dark.png)
-- [Dashboard móvel](../../../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-mobile.png)
-- [Histórico e gráficos](../../../frontend/test-results/dashboard-historical-metri-d9a79-hart-windows-and-pagination/historical-charts.png)
-- [Check UP real do worker](../../../frontend/test-results/dashboard-real-CRUD-throug-76d3a--and-an-actual-worker-check/real-worker-up.png)
+- [Light dashboard](../../../frontend/test-results/dashboard-visible-scope-fi-07b8a-ion-and-stale-update-errors/dashboard-light.png)
+- [Dark dashboard](../../../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-dark.png)
+- [Mobile dashboard](../../../frontend/test-results/dashboard-desktop-and-mobi-6cf46-th-themes-and-accessibility/dashboard-mobile.png)
+- [History and charts](../../../frontend/test-results/dashboard-historical-metri-d9a79-hart-windows-and-pagination/historical-charts.png)
+- [Real worker UP check](../../../frontend/test-results/dashboard-real-CRUD-throug-76d3a--and-an-actual-worker-check/real-worker-up.png)
 
-Relatório Playwright: `frontend/playwright-report/index.html`.
-Logs detalhados da sessão, fora do Git:
+Playwright report: `frontend/playwright-report/index.html`.
+Detailed session logs, outside Git:
 
 ```text
 /tmp/infrapulse-sprint05-e2e.log
@@ -121,59 +121,59 @@ Logs detalhados da sessão, fora do Git:
 /tmp/infrapulse-sprint05-frontend-build.log
 ```
 
-### Evidências operacionais
+### Operational evidence
 
-A stack E2E publicou somente `127.0.0.1:8080`. API, worker, destino controlado e
-PostgreSQL não publicaram portas. O frontend tinha somente a rede `api_access`;
-o banco tinha somente a rede de dados interna. O Compose principal foi validado
-com bindings exclusivos de loopback para API:8000, Grafana:3000 e frontend:8080.
-Não se alega execução do novo frontend no projeto de desenvolvimento.
+The E2E stack published only `127.0.0.1:8080`. The API, worker, controlled target,
+and PostgreSQL published no ports. The frontend had only the `api_access` network;
+the database had only the internal data network. The main Compose configuration
+was validated with loopback-only bindings for API:8000, Grafana:3000, and
+frontend:8080. This does not claim the new frontend ran in the development project.
 
-A regressão operacional confirmou scrapes API/worker como UP, recuperação de traces
-no Tempo, consultas dos dashboards Grafana e recebimento de alerta pelo Alertmanager.
-Com o Collector parado, a API permaneceu pronta e o worker persistiu outro UP.
-Todas as portas dessa stack operacional descartável estavam sem publicação.
+The operational regression confirmed API/worker scrapes as UP, Tempo trace
+retrieval, Grafana dashboard queries, and Alertmanager receiving an alert.
+With the Collector stopped, the API remained ready and the worker persisted
+another UP. All ports in that disposable operational stack were unpublished.
 
-Os ambientes descartáveis foram removidos, inclusive bancos em tmpfs. A API e o
-PostgreSQL de desenvolvimento mantiveram seus IDs, respectivamente
-`73b8b6ff3fd3` e `b1ed7690ecac`, sem reinicialização. O `.env` local não foi editado.
+Disposable environments were removed, including tmpfs databases. The development
+API and PostgreSQL retained their IDs, respectively `73b8b6ff3fd3` and
+`b1ed7690ecac`, without restart. The local `.env` was not edited.
 
-## Correções identificadas na validação
+## Fixes identified during validation
 
-Foram corrigidos: aspas das expressões regulares no Nginx; compatibilidade do
-cliente com a interceptação MSW; seletores assíncronos/acessíveis dos testes;
-contraste dos textos e botões nos dois temas; posição do título ao usar o link
-para conteúdo; timezone obrigatório e subintervalos não vazios em períodos curtos.
-Os resultados acima referem-se às execuções aprovadas após as respectivas correções.
+Fixed: quoting in Nginx regular expressions; client compatibility with MSW
+interception; asynchronous/accessible test selectors; text and button contrast
+in both themes; heading position when using the skip-to-content link; required
+time zone and nonempty subintervals in short periods. Results above are from
+passing runs after their respective fixes.
 
-## Segurança, workflow e limites
+## Security, workflow, and limits
 
-AGENTS.md, hooks, configurações Entire/Brain, código e contratos do backend foram
-preservados. O Brain foi consultado por brief/recall. Como seu índice estava um
-commit atrás, decisões foram conferidas diretamente nos arquivos atuais. A falha
-do grafo não motivou reindexação, instalação ou alteração de configuração.
+AGENTS.md, hooks, Entire/Brain configuration, backend code, and contracts were
+preserved. Brain was queried through brief/recall. Because its index was one
+commit behind, decisions were checked directly in current files. A graph
+failure did not prompt reindexing, installation, or configuration changes.
 
-Não houve commits, pushes, reescrita de histórico ou checkpoints manuais.
+No commits, pushes, history rewrites, or manual checkpoints occurred.
 
-Limitações mantidas e documentadas:
+Documented limitations:
 
-- UP/DOWN globais, busca textual, ordenação configurável e filtro global de estado
-  exigem aprovação de extensão do backend; a interface não promete esses recursos.
-- Cada gráfico custa até 12 consultas; não há garantia de snapshot entre chamadas.
-- Checks persistidos tardiamente podem alterar períodos encerrados. Cache histórico
-  não significa imutabilidade do banco; recarregar obtém uma nova leitura.
-- Paginação de checks respeita offset máximo 10000; reduza o período além desse limite.
-- E2E foi executado em Chromium. Firefox/WebKit e avaliação humana completa de
-  acessibilidade/leitor de tela não foram executados.
-- Não há autenticação, publicação pública, HA, notificações ou alteração do worker.
-- A integração de desenvolvimento não foi iniciada automaticamente; a stack local
-  preexistente foi preservada. O `.env` existente não tinha senha Grafana configurada;
-  validações usaram somente senhas efêmeras, sem modificar esse arquivo.
+- Global UP/DOWN, text search, configurable sorting, and a global status filter
+  require approval of a backend extension; the interface does not promise them.
+- Each chart costs up to 12 queries; there is no cross-request snapshot guarantee.
+- Checks persisted late may change closed periods. Historical cache does not imply
+  database immutability; reloading obtains a new read.
+- Check pagination respects a maximum offset of 10000; narrow the period beyond it.
+- E2E ran in Chromium. Firefox/WebKit and full human accessibility/screen-reader
+  assessment were not performed.
+- No authentication, public publication, HA, notifications, or worker changes.
+- The development integration was not started automatically; the pre-existing
+  local stack was preserved. The existing `.env` had no Grafana password set;
+  validation used only ephemeral passwords without changing that file.
 
-## Reprodução e Conventional Commit — Fase 4
+## Reproduction and Conventional Commit — Phase 4
 
-Instruções completas em [frontend.md](../../operations/frontend.md) e decisões no
-[ADR 0003](../../adr/0003-frontend-dashboard.md).
+Full instructions are in [frontend.md](../../operations/frontend.md), with
+decisions in [ADR 0003](../../adr/0003-frontend-dashboard.md).
 
 ```bash
 npm --prefix frontend ci
@@ -187,15 +187,15 @@ cd ..
 python3 scripts/validate-dashboard.py
 ```
 
-Sugestão, sem execução:
+Suggestion, not executed:
 
 ```text
 feat(frontend): add service reliability dashboard
 ```
 
-## Inventário de arquivos
+## File inventory
 
-### Modificados (5)
+### Modified (5)
 
 - `.gitignore`
 - `README.md`
@@ -203,7 +203,7 @@ feat(frontend): add service reliability dashboard
 - `compose.yaml`
 - `scripts/verify-observability-ports.py`
 
-### Criados (60)
+### Created (60)
 
 - `.dockerignore`
 - `compose.frontend.test.yaml`
@@ -266,8 +266,7 @@ feat(frontend): add service reliability dashboard
 - `scripts/seed-dashboard-e2e.py`
 - `scripts/validate-dashboard.py`
 
-### Gerados e ignorados
+### Generated and ignored
 
 `frontend/src/shared/api/generated.d.ts`, `frontend/dist/`, `frontend/node_modules/`,
-`frontend/test-results/` e `frontend/playwright-report/`. Não fazem parte da entrega
-versionável; são reproduzidos pelos comandos documentados.
+`frontend/test-results/` e `frontend/playwright-report/`. They are not part of the versioned delivery; the documented commands reproduce them.

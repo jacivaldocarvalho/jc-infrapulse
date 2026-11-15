@@ -1,170 +1,165 @@
-# Sprint 06 — Fase E: Docker builds e validação de imagens
+# Sprint 06 — Phase E: Docker builds and image validation
 
-## Inspeção anterior à implementação
+## Inspection before implementation
 
-Baseline: `develop`, HEAD `fd275524a8690147d77382287225c70e78e93488`,
-working tree limpa. AGENTS.md, guia e Brain Entire consultados; o código atual
-é a fonte de verdade. Inspecionados workflow, todos os Dockerfiles/dockerignores,
-quatro Composes existentes, exportação OpenAPI, gerador TypeScript e runtime.
+Baseline: `develop`, HEAD `fd275524a8690147d77382287225c70e78e93488`, clean
+working tree. AGENTS.md, the Entire guide and Brain were consulted; current code
+was the source of truth. The workflow, all Dockerfiles/dockerignores, four existing
+Compose files, OpenAPI export, TypeScript generator, and runtime were inspected.
 
-- API e worker usam `backend/Dockerfile`, estágio runtime. Será construído uma
-  única vez, com comandos distintos nos smoke tests.
-- Backend: `python:3.12-slim`, usuário `app`, porta declarada 8000, CMD uvicorn.
-  O comando worker e ambos os healthchecks backend pertencem ao Compose.
-- Frontend: exportação Python do checkout, Node `24.18.1-bookworm-slim`, npm ci,
-  tipos gerados e build, runtime `nginxinc/nginx-unprivileged:1.29-alpine`,
-  usuário 101, porta 8080 e healthcheck `/healthz`.
-- O Dockerfile frontend já usa OpenAPI do próprio contexto. O novo job deverá
-  comparar o schema do estágio build com `api-contract-openapi` da mesma execução,
-  sem modificar os Dockerfiles ou aceitar tipos gerados localmente.
-- Dockerignores excluem `.env`, dependências locais, relatórios e tipos gerados;
-  COPY explícito do backend limita o conteúdo. Serão verificados também os
-  arquivos e layers efetivamente produzidos, não somente os padrões de ignore.
+- API and worker use the runtime stage of `backend/Dockerfile`. It is built once,
+  with distinct commands in smoke tests.
+- Backend: `python:3.12-slim`, user `app`, declared port 8000, uvicorn CMD.
+  The worker command and both backend health checks belong to Compose.
+- Frontend: Python export from the checkout, Node `24.18.1-bookworm-slim`, npm ci,
+  generated types and build, runtime `nginxinc/nginx-unprivileged:1.29-alpine`,
+  user 101, port 8080, and `/healthz` health check.
+- The frontend Dockerfile already uses OpenAPI from its own context. The new job
+  must compare the build-stage schema with `api-contract-openapi` from the same
+  run, without changing Dockerfiles or accepting locally generated types.
+- Dockerignores exclude `.env`, local dependencies, reports, and generated types;
+  explicit backend COPY limits content. Actual produced files and layers will
+  also be checked, not only ignore patterns.
 
-Riscos/inconsistências documentados antes da correção: tags-base mutáveis;
-backend sem HEALTHCHECK na imagem (há no Compose); ferramentas de empacotamento
-e possíveis resíduos do pip na imagem backend; necessidade legítima de senha na
-configuração e de PostgreSQL para readiness/heartbeat. Não foi identificada nesta
-inspeção uma vulnerabilidade que justifique alterar Dockerfiles. Se a inspeção
-dinâmica revelar uma configuração relevante, a proposta será apresentada antes
-de modificar qualquer Dockerfile.
+Risks/inconsistencies documented before the fix: mutable base tags; no image-level
+HEALTHCHECK in backend (Compose has one); packaging tools and possible pip residue
+in the backend image; legitimate need for a password in configuration and
+PostgreSQL for readiness/heartbeat. This inspection found no vulnerability
+justifying a Dockerfile change. Any material configuration found by dynamic
+inspection would be proposed before changing a Dockerfile.
 
-Estratégia: builds locais com Buildx `--load`, sem login, publicação ou deploy;
-estágio frontend build temporário para verificar schema/tipos; dois runtimes.
-Smoke sem rede e sem banco: API `/health` 200 e `/ready` 503; worker inicia,
-healthcheck falha sem heartbeat e SIGTERM encerra graciosamente; Nginx valida
-configuração, estáticos e saúde. Nenhuma migração será executada. Não substitui
-os testes reais de banco e observabilidade das fases anteriores.
+Strategy: local Buildx `--load` builds, without login, publication, or deployment;
+a temporary frontend build stage to verify schema/types; two runtimes. Smoke
+without network or database: API `/health` 200 and `/ready` 503; worker starts,
+health check fails without heartbeat, and SIGTERM stops gracefully; Nginx checks
+configuration, static files, and health. No migration will run. This does not
+replace earlier real database and observability tests.
 
-O estado acima foi registrado antes da implementação; os resultados executados
-estão abaixo. Nenhum Dockerfile precisou ser alterado.
+The state above was recorded before implementation; executed results follow.
+No Dockerfile needed a change.
 
-## Arquivos e job
+## Files and job
 
-- Modificado: `.github/workflows/ci.yml`.
-- Criados: `compose.images.test.yaml`, `scripts/validate-images.py`,
-  `scripts/test_image_validation.py` e este relatório.
+- Modified: `.github/workflows/ci.yml`.
+- Created: `compose.images.test.yaml`, `scripts/validate-images.py`,
+  `scripts/test_image_validation.py`, and this report.
 
-`docker-build`: Ubuntu 24.04, Python 3.12, timeout de 35 minutos, etapa de
-validação de 28 minutos e cleanup always de três minutos. Usa Buildx disponível
-no runner, sem instalar ferramentas arbitrárias ou alterar o builder. Depende
-de `api-contract`; download sem run ID alternativo consome somente o artefato
-`api-contract-openapi` da execução corrente. Não há login, push ou deploy.
+`docker-build`: Ubuntu 24.04, Python 3.12, 35-minute job timeout, 28-minute
+validation step, and three-minute always cleanup. Uses runner-provided Buildx
+without installing arbitrary tools or changing the builder. Depends on
+`api-contract`; download without an alternative run ID consumes only the current
+run's `api-contract-openapi` artifact. No login, push, or deployment.
 
-As actions existentes foram reutilizadas com seus SHAs completos e comentários
-de versão. `permissions: contents: read`, checkout sem persistência de credenciais,
-triggers e concurrency permanecem iguais. Os nove jobs anteriores não mudaram.
+Existing actions were reused with full SHAs and version comments.
+`permissions: contents: read`, checkout without persisted credentials, triggers,
+and concurrency remain unchanged. The preceding nine jobs did not change.
 
-## Builds e contrato
+## Builds and contract
 
-Três targets são carregados localmente via `docker buildx build --load
---platform linux/amd64`: backend runtime, frontend build temporário e frontend
-runtime. API e worker compartilham a imagem backend; não há segundo build para
-o worker. Os estágios frontend reutilizam o cache do mesmo contexto. O estágio
-build contém ferramentas de desenvolvimento por definição; ele nunca é iniciado
-e é removido ao final, sem ser tratado como runtime.
+Three targets are loaded locally with `docker buildx build --load
+--platform linux/amd64`: backend runtime, temporary frontend build, and frontend
+runtime. API and worker share the backend image; the worker is not built again.
+Frontend stages reuse cache from the same context. The build stage contains
+development tools by definition; it is never started and is removed afterward,
+not treated as runtime.
 
-Os Dockerfiles existentes permanecem como fonte da instalação: pip com
-`requirements.lock`, npm ci com `package-lock.json`, exportação OpenAPI e
-`npm run build` com geração de tipos. A inspeção copia o schema e o arquivo
-`generated.d.ts` do container não iniciado do estágio build. Na implementação
-inicial exigia tipos não vazios e igualdade JSON do schema; isso era insuficiente
-para validar o conteúdo dos tipos e foi corrigido na rodada descrita ao final.
-Os Dockerignores
-impedem entrada dos tipos locais e de node_modules, `.venv`, `.env` e relatórios.
-O `.dockerignore` da raiz é o efetivo para o frontend (contexto raiz);
-`frontend/.dockerignore` não substitui esse arquivo. Backend utiliza o seu próprio
-ignore. `.env.example` é admitido pelo ignore backend, mas não por seus COPYs
-explícitos; não foi encontrado nos runtimes ou layers.
+Existing Dockerfiles remain the installation source: pip with `requirements.lock`,
+npm ci with `package-lock.json`, OpenAPI export, and `npm run build` with type
+generation. Inspection copies the schema and `generated.d.ts` from an unstarted
+build-stage container. The initial implementation required nonempty types and
+JSON schema equality; this was insufficient to validate type content and was
+fixed in the later round below. Dockerignores exclude local types, node_modules,
+`.venv`, `.env`, and reports. The root `.dockerignore` governs the root-context
+frontend; `frontend/.dockerignore` does not replace it. Backend has its own
+ignore. `.env.example` passes backend ignore but not its explicit COPYs; it was
+not found in runtimes or layers.
 
-Na validação local foi utilizado o exportador do mesmo checkout, em uma cópia
-sem `.git`, `.env` ou dependências locais. No CI, esse arquivo será fornecido pelo
-job api-contract. SHA-256 do contrato local:
+Local validation used an exporter from the same checkout in a copy without
+`.git`, `.env`, or local dependencies. In CI, api-contract supplies the file.
+Local contract SHA-256:
 `fd3c9ec866c776d3ae0e6c50234015bccc6a793e3ae39362d1013029aa9e1a39`.
 
-## Inspeção das imagens resultantes
+## Inspection of resulting images
 
-| Item | Backend compartilhado | Frontend runtime |
+| Item | Shared backend | Frontend runtime |
 | --- | --- | --- |
-| OS/arquitetura | linux/amd64 | linux/amd64 |
-| Usuário declarado | app; UID não zero comprovado no processo | 101 |
-| Entrypoint | nenhum | /docker-entrypoint.sh |
+| OS/architecture | linux/amd64 | linux/amd64 |
+| Declared user | app; nonzero UID proved in process | 101 |
+| Entrypoint | none | /docker-entrypoint.sh |
 | CMD | uvicorn app.main:app --host 0.0.0.0 --port 8000 | nginx -g daemon off; |
-| Porta declarada | 8000/tcp | 8080/tcp |
-| HEALTHCHECK na imagem | ausente, conforme Dockerfile; Compose operacional possui healthchecks | wget /healthz |
-| Layers inspecionadas | 12 | 12 |
-| Arquivos regulares no filesystem final | 7.891 | 1.009 |
-| Tamanho informado pelo Docker | 287.942.518 bytes | 83.283.684 bytes |
+| Declared port | 8000/tcp | 8080/tcp |
+| Image HEALTHCHECK | absent per Dockerfile; operational Compose has health checks | wget /healthz |
+| Inspected layers | 12 | 12 |
+| Regular files in final filesystem | 7.891 | 1.009 |
+| Docker-reported size | 287.942.518 bytes | 83.283.684 bytes |
 
-IDs observados antes do cleanup:
+IDs observed before cleanup:
 
 - Backend: `sha256:b8e830516a8961db25a549d25db71ce610151c4fac3bbba51a2979c61442800f`.
 - Frontend: `sha256:de52f1bfc3e52d53ad05076521b5af3a8a256a55bd7de38b88341bfa66d53982`.
 
-Foram verificados configuração, histórico e filesystem exportado, além de cada
-layer original (inclusive conteúdo que poderia ter sido apagado posteriormente).
-Os tars são lidos em streaming, sem extração de caminhos no host. A inspeção
-rejeita arquivos `.env`, diretórios de credenciais/Git/dependências locais,
-testes backend no runtime, padrões de chaves privadas/tokens e escrita por outros
-em inodes de aplicação/configuração. Modos de symlinks não são permissões do alvo.
-Não foram encontrados secrets pelos controles implementados. Não se trata de
-scanner universal de secrets nem de análise de CVEs/supply chain da fase seguinte.
+Configuration, history, and exported filesystem were checked, as was each original
+layer, including content that might later have been deleted. TARs were streamed
+without extracting host paths. Inspection rejects `.env` files, credential/Git/
+local-dependency directories, backend tests in runtime, private-key/token patterns,
+and world-writable application/configuration inodes. Symlink modes are not target
+permissions. The implemented checks found no secrets. This is neither a universal
+secret scanner nor the next phase's CVE/supply-chain analysis.
 
-Variáveis embutidas inspecionadas: somente PATH, locale/versão/fingerprint público
-GPG da base Python e flags Python/pip no backend; PATH e versões Nginx/NJS/pacotes
-no frontend. O relatório publica apenas nomes dessas variáveis. `GPG_KEY` é um
-identificador público da base, não credencial privada. Nenhuma senha é embutida.
+Inspected embedded variables: only PATH, locale/version/public GPG fingerprint
+from the Python base, and Python/pip flags in backend; PATH and Nginx/NJS/package
+versions in frontend. The report publishes variable names only. `GPG_KEY` is a
+public base-image identifier, not a private credential. No password is embedded.
 
-pytest, Ruff, mypy e httpx não estão instalados no runtime backend; `pip check`
-passou. Python e ferramentas de empacotamento da imagem-base permanecem. O runtime
-frontend não possui Node, Python, workspace ou node_modules. Foram encontrados
-42 arquivos de resíduos de build/egg-info em `/app` no backend: oportunidade de
-redução de tamanho, sem dependências dev ou credenciais identificadas. Proposta
-para revisão futura: remover apenas esses resíduos após pip install ou avaliar
-um estágio de empacotamento separado; não foi alterado o Dockerfile nesta fase.
+pytest, Ruff, mypy, and httpx are absent from backend runtime; `pip check` passed.
+Python and base-image packaging tools remain. Frontend runtime has no Node,
+Python, workspace, or node_modules. Found 42 build/egg-info residue files in
+backend `/app`: a size-reduction opportunity, with no identified dev dependency
+or credential. Future review proposal: remove only this residue after pip install
+or consider a separate packaging stage; the Dockerfile was unchanged here.
 
-Permissões: `/app` e `/app/app` root:root 0755; main.py root:root 0664.
-Estáticos frontend root:root 0755/0644. A base mantém `/etc/nginx` 101:0 0775
-e o nginx.conf copiado está em 0664 root:root. Isso permite escrita de configuração
-num container deliberadamente executado com filesystem gravável e grupo 0; o
-Compose operacional já aplica read_only e o smoke exige essa proteção. Proposta
-de hardening para revisão separada: avaliar 0644 para os configs e propriedade
-do diretório, validando antes a compatibilidade com o entrypoint da base.
-Nenhuma mudança de permissões de produção foi realizada.
+Permissions: `/app` and `/app/app` root:root 0755; main.py root:root 0664.
+Frontend static files root:root 0755/0644. The base retains `/etc/nginx` 101:0
+0775, and copied nginx.conf is root:root 0664. This permits writing configuration
+in a deliberately writable container running in group 0; operational Compose
+already applies read_only, which smoke requires. Separate hardening proposal:
+consider 0644 for configs and directory ownership after checking base-entrypoint
+compatibility. No production permission was changed.
 
-## Smoke tests e isolamento
+## Smoke tests and isolation
 
-O Compose novo não possui banco, networks, portas publicadas, volumes persistentes
-ou bind mounts. Todos os containers usam network_mode none, filesystem somente
-leitura, cap_drop ALL e no-new-privileges. Runtimes têm somente `/tmp` em tmpfs.
-Nginx recebe um alias api em loopback para resolver o upstream estático ao iniciar;
-nenhum proxy/API E2E é exercitado. Não há acesso à rede privada do runner.
+The new Compose file has no database, networks, published ports, persistent
+volumes, or bind mounts. Every container uses network_mode none, a read-only
+filesystem, cap_drop ALL, and no-new-privileges. Runtimes have only `/tmp` on
+tmpfs. Nginx receives an api loopback alias to resolve its static upstream at
+startup; no proxy/API E2E is exercised. There is no access to the runner's
+private network.
 
-As senhas são geradas em memória pelo lifecycle existente e mascaradas no CI;
-somente o nome da variável é passado ao Docker, sem imprimir seu valor. Backend
-usa 127.0.0.1:1, timeout de um segundo, telemetria/métricas desabilitadas
-explicitamente. Não lê `.env`, não acessa o PostgreSQL de desenvolvimento e não
-executa migrações. Os cenários positivos de banco/worker continuam cobertos por
-D1/D2; a ausência deliberada do banco não é apresentada como readiness saudável.
+Passwords are generated in memory by the existing lifecycle and masked in CI;
+only the variable name is passed to Docker, without printing its value. Backend
+uses 127.0.0.1:1, a one-second timeout, and explicitly disabled telemetry/metrics.
+It does not read `.env`, access development PostgreSQL, or run migrations. D1/D2
+continue to cover positive database/worker scenarios; deliberate database
+absence is not presented as healthy readiness.
 
-- API inicia com o CMD original; `/health` retorna 200/healthy.
-- `/ready` deve retornar 503/not_ready sem banco.
-- Worker usa o mesmo runtime com `python -m app.worker`; startup comprovado,
-  healthcheck deve retornar exatamente 1 sem heartbeat; qualquer outro status
-  inesperado falha. SIGTERM encerra com código 0 e logs worker_stopped e
-  scheduler_stopped. Não há supressão genérica de erros.
-- Nginx inicia com entrypoint/CMD originais; nginx -t passa; index.html e seus
-  assets JS/CSS são servidos; healthcheck Docker se torna healthy.
-- API, worker e Nginx encerram com exit code 0. Inspeção confirma nenhuma porta,
-  nenhum container privilegiado e nenhum bind mount/socket do host.
+- API starts with the original CMD; `/health` returns 200/healthy.
+- `/ready` must return 503/not_ready without a database.
+- Worker uses the same runtime with `python -m app.worker`; startup is proved,
+  health check must return exactly 1 without heartbeat; any other unexpected
+  status fails. SIGTERM exits with code 0 and worker_stopped/scheduler_stopped
+  logs. There is no generic error suppression.
+- Nginx starts with original entrypoint/CMD; nginx -t passes; index.html and JS/CSS
+  assets are served; Docker health check becomes healthy.
+- API, worker, and Nginx exit with code 0. Inspection confirms no port,
+  privileged container, or host bind mount/socket.
 
-## Execução, testes e evidências anteriores à correção dos tipos
+## Execution, tests, and evidence before the type-comparison fix
 
-Ambiente local: Python 3.12, Buildx v0.38.0, Compose v5.6.0. Checkout temporário
-`/tmp/infrapulse-s06e-j44xxe1h`, projeto `infrapulse-images-s06e-j44xxe1h`.
-Antes de cada execução foi comprovada ausência de recursos e tags com esse nome.
+Local environment: Python 3.12, Buildx v0.38.0, Compose v5.6.0. Temporary checkout
+`/tmp/infrapulse-s06e-j44xxe1h`, project `infrapulse-images-s06e-j44xxe1h`.
+Absence of resources and tags with that name was proved before each run.
 
-Comandos principais executados (targets pelo validador):
+Main commands run (targets selected by validator):
 
 ```bash
 backend/.venv/bin/python -B scripts/export-openapi.py > /tmp/current-openapi.json
@@ -178,263 +173,265 @@ actionlint -color .github/workflows/ci.yml
 git diff --check
 ```
 
-Os caminhos reais de schema/report foram os arquivos em `evidence/` do checkout
-temporário, com INFRAPULSE_TEST_PROJECT e RUNNER_TEMP explícitos. `actionlint`
-foi executado pelo binário existente em `/tmp/infrapulse-s06b-actionlint-feulusd_/`.
-ShellCheck examinou todos os blocos shell do workflow com expressões Actions
-substituídas por placeholders, além da validação de sintaxe pelo actionlint.
+Actual schema/report paths were files in the temporary checkout's `evidence/`,
+with explicit INFRAPULSE_TEST_PROJECT and RUNNER_TEMP. `actionlint` ran from the
+existing binary at `/tmp/infrapulse-s06b-actionlint-feulusd_/`. ShellCheck
+examined all workflow shell blocks with Actions expressions replaced by
+placeholders, alongside actionlint syntax validation.
 
-Durante implementação houve duas falhas locais preservadas como evidência:
-cleanup inicialmente omitia o profile inspection; depois um gate de permissões
-tratou symlinks 0777 como arquivos graváveis. Ambos foram corrigidos no novo
-validador, sem alterar código/Dockerfiles existentes. O fallback corrigido
-removeu o container/tag restantes da primeira tentativa; a segunda tentativa
-comprovou cleanup também em falha. Uma execução completa final passou, incluindo
-inspeção e smoke. Oito testes focados verificam credenciais, conteúdo cruzando
-chunks, permissões, symlinks, certificados públicos e preservação do erro primário
-17 diante de cleanup 23 (também cenários de sucesso/falha isolada).
+Two local failures during implementation were retained as evidence: cleanup
+initially omitted the inspection profile; then a permissions gate treated
+0777 symlinks as writable files. Both were fixed in the new validator without
+changing existing code/Dockerfiles. The corrected fallback removed the leftover
+container/tag from the first attempt; the second proved cleanup on failure too.
+A final full run passed, including inspection and smoke. Eight focused tests
+checked credentials, content crossing chunks, permissions, symlinks, public
+certificates, and preservation of primary error 17 despite cleanup 23, plus
+isolated success/failure cases.
 
-| Validação final | Resultado |
+| Final validation | Result |
 | --- | --- |
-| Dockerfiles: Buildx --check e builds reais | PASS |
-| Três Dockerignores e contexto sem .env | PASS |
-| Backend runtime, frontend build e frontend runtime | PASS — sem publicação |
-| Schema/existência de tipos do frontend | PASS inicial — schema idêntico; comparação integral dos tipos ainda ausente |
-| Configuração, rootfs, histórico e 24 layers runtime | PASS |
-| API, worker, Nginx e estáticos | PASS — sem banco/rede |
-| Gates unitários de inspeção/erros | PASS — oito testes |
-| Lifecycle e propagação existentes | PASS — 22 testes |
-| Cleanup de containers/tags/markers | PASS |
-| Containers, redes e volumes preexistentes | PASS — baseline preservado |
-| ci-required | PASS — 1.048.576 combinações; somente dez sucessos aprovam |
-| actionlint, ShellCheck, Ruff e formatação | PASS |
-| git diff --check, incluindo arquivos novos | PASS |
-| Execução E no GitHub Actions | NOT RUN — sem commit/push autorizado |
-| Playwright/observabilidade completos nesta rodada | NOT RUN — não necessários para este smoke |
+| Dockerfiles: Buildx --check and real builds | PASS |
+| Three Dockerignores and context without .env | PASS |
+| Backend runtime, frontend build, frontend runtime | PASS — no publication |
+| Frontend schema/type existence | Initial PASS — identical schema; full type comparison still missing |
+| Configuration, rootfs, history, and 24 runtime layers | PASS |
+| API, worker, Nginx, and static files | PASS — no database/network |
+| Inspection/error unit gates | PASS — eight tests |
+| Existing lifecycle and propagation | PASS — 22 tests |
+| Container/tag/marker cleanup | PASS |
+| Pre-existing containers, networks, and volumes | PASS — baseline preserved |
+| ci-required | PASS — 1.048.576 combinations; only ten successes accepted |
+| actionlint, ShellCheck, Ruff, and format | PASS |
+| git diff --check, including new files | PASS |
+| E run in GitHub Actions | NOT RUN — no authorized commit/push |
+| Full Playwright/observability in this round | NOT RUN — unnecessary for this smoke |
 
-Evidências em `evidence/`: `validation.log`, `report.json`, `openapi.json` e
-`before.json`. Tentativas anteriores: `first-validation.log`, `second-validation.log`
-e `recovery-cleanup.log`. O relatório final contém metadados/permissões e hash do
-contrato; não contém senhas, valores de ambiente, tars ou arquivos do runtime.
-O workflow publica somente esse JSON sanitizado como `docker-image-validation`,
-retenção de sete dias e erro se ausente. O upload padrão exige sucesso dos passos
-anteriores, inclusive cleanup; não publica resultados de validação reprovada.
+Evidence in `evidence/`: `validation.log`, `report.json`, `openapi.json`, and
+`before.json`. Earlier attempts: `first-validation.log`, `second-validation.log`,
+and `recovery-cleanup.log`. The final report contains metadata/permissions and
+the contract hash; it contains no passwords, environment values, TAR files, or
+runtime files. The workflow publishes only that sanitized JSON as
+`docker-image-validation`, with seven-day retention and error if absent. Default
+upload requires success of preceding steps, including cleanup; it does not
+publish failed-validation results.
 
-## Cleanup, quality gate e limitações
+## Cleanup, quality gate, and limitations
 
-O mesmo mecanismo de ownership da D2 limita down --volumes --remove-orphans ao
-projeto reservado. O profile inspection é incluído tanto na criação quanto no
-cleanup, mas nunca no startup dos runtimes. Um marker adicional reserva as três
-tags após recusar tags existentes. Só são removidas tags com label de propriedade
-correspondente. Erros secundários são registrados sem substituir uma falha primária;
-sem falha primária, erros de cleanup continuam reprovando o job. Não há prune.
+The D2 ownership mechanism limits down --volumes --remove-orphans to the
+reserved project. The inspection profile is included in creation and cleanup,
+but never in runtime startup. An extra marker reserves the three tags after
+rejecting existing tags. Only tags with matching ownership labels are removed.
+Secondary errors are logged without replacing a primary failure; without a
+primary failure, cleanup errors still fail the job. There is no prune.
 
-Confirmação final: zero containers/redes/volumes com label do projeto; três tags
-e ambos os markers ausentes. IDs, StartedAt, RestartCount e estado dos cinco
-containers preexistentes, além das redes e volumes, coincidem com o baseline.
-Cache de build e imagens-base permanecem; não houve remoção global de imagens.
+Final confirmation: zero project-labeled containers/networks/volumes; three
+tags and both markers absent. IDs, StartedAt, RestartCount, and status of five
+pre-existing containers, as well as networks and volumes, match baseline.
+Build cache and base images remain; no global image removal.
 
-ci-required mantém nome público, always e código anterior; agora possui dez
-dependências. A matriz exaustiva success/failure/cancelled/skipped reprova qualquer
-falha/cancelamento/skip de docker-build, incluindo skip por falha do contrato.
-Os nove jobs de validação anteriores foram comparados estruturalmente com HEAD
-e estão idênticos. O agregador só teve a lista needs estendida.
+ci-required retains its public name, always, and prior code, now with ten
+dependencies. The exhaustive success/failure/cancelled/skipped matrix rejects
+any docker-build failure/cancellation/skip, including a contract-failure skip.
+The nine prior validation jobs were structurally compared with HEAD and are
+identical. Only the aggregator needs list was extended.
 
-Riscos residuais: tags-base mutáveis, dependência de registries para download,
-ferramentas de empacotamento/resíduos backend e permissões da base Nginx descritos
-acima. Builds não são declarados bit a bit reproduzíveis. Os padrões de secrets
-não cobrem todos os formatos possíveis. Os healthchecks positivos com banco não
-são repetidos aqui. Perda forçada do runner pode impedir finally/fallback cleanup.
-O runner hospedado ainda precisa comprovar suporte ao Buildx --check/--load e
-validar o job completo. Warnings herdados das actions Node 20 não foram alterados.
+Residual risks: mutable base tags, registry dependency for downloads, backend
+packaging tools/residue, and base Nginx permissions described above. Builds are
+not claimed bit-for-bit reproducible. Secret patterns do not cover every possible
+format. Positive database health checks are not repeated here. Forced runner
+loss may prevent finally/fallback cleanup. The hosted runner still needs to
+prove Buildx --check/--load support and validate the full job. Inherited Node 20
+action warnings were unchanged.
 
-Git permanece em develop no baseline, com somente os cinco arquivos desta fase
-pendentes, nenhum staging/commit/push. Entire habilitado, um checkpoint anterior
-pendente informado por status; nenhuma sincronização, repair, checkpoint manual
-ou alteração de hooks/configuração foi executada. Containers locais preservados.
+Git remains on develop at baseline, with only the five files of this phase
+pending, no staging/commit/push. Entire enabled, one prior pending checkpoint
+reported by status; no synchronization, repair, manual checkpoint, or
+hook/configuration change. Local containers preserved.
 
-Recomendação: pronta para revisão local e posterior autorização de versionamento
-e validação remota dos dez gates mais agregador. Não considerar E aprovada
-remotamente. Não foi iniciada a Fase F. Commit sugerido, sem executar:
+Recommendation: ready for local review and subsequent authorization for versioning
+and remote validation of ten gates plus aggregator. Do not consider E remotely
+approved. Phase F was not started. Suggested commit, not executed:
 `ci(docker): build inspect and smoke runtime images`.
 
-## Correção local da comparação dos tipos OpenAPI
+## Local fix for OpenAPI type comparison
 
-Defeito documentado antes da correção: `validate` comparava os schemas JSON,
-mas exigia somente tamanho maior que zero de `generated.d.ts`. Um arquivo
-TypeScript não vazio e divergente era aceito. A revisão anterior reproduziu
-esse comportamento isolando as operações Docker com mocks; os tipos atuais
-não foram demonstrados incorretos, mas faltava um gate negativo efetivo.
+Defect documented before the fix: `validate` compared JSON schemas but required
+only that `generated.d.ts` have nonzero length. A nonempty, divergent TypeScript
+file was accepted. The prior review reproduced this by mocking Docker operations;
+current types were not shown to be wrong, but an effective negative gate was missing.
 
-Baseline desta rodada: develop, HEAD
-`fd275524a8690147d77382287225c70e78e93488`; os cinco arquivos da Fase E permanecem
-pendentes. A correção está autorizada somente no validador, seus testes e neste
-relatório. Workflow, Compose, Dockerfiles e Dockerignores serão preservados.
+Round baseline: develop, HEAD
+`fd275524a8690147d77382287225c70e78e93488`; the five Phase E files remained
+pending. The fix was authorized only for the validator, its tests, and this report.
+Workflow, Compose, Dockerfiles, and Dockerignores were to be preserved.
 
-Gerador inspecionado: `frontend/scripts/generate-api.mjs`, comando
-`npm run generate:api` (também chamado por npm run build), usando openapiTS com
-JSON.parse e astToString, sem opções adicionais, mais o cabeçalho existente.
-`openapi-typescript` está em 7.13.0 no package.json e no package-lock.json v3,
-com integrity registrada. O job api-contract produz o schema da execução, e
-docker-build o baixa pelo nome sem selecionar outro run ID.
+Inspected generator: `frontend/scripts/generate-api.mjs`, command
+`npm run generate:api` (also invoked by npm run build), using openapiTS with
+JSON.parse and astToString, no extra options, and the existing header.
+`openapi-typescript` is 7.13.0 in package.json and package-lock.json v3, with
+recorded integrity. api-contract produces the run's schema; docker-build
+downloads it by name without selecting another run ID.
 
-Docker está disponível, mas as três tags da Fase E, incluindo o estágio build
-com o gerador travado, foram removidas pelo cleanup comprovado anteriormente.
-Os frontends runtime existentes são Nginx, sem gerador/dependências Node.
-Não haverá reconstrução nesta rodada; a validação real completa deverá usar
-um novo projeto descartável após autorização de revalidação/rebuild.
+Docker was available, but the three Phase E tags, including the build stage with
+its pinned generator, had been removed by previously verified cleanup. Existing
+frontend runtimes were Nginx, without generator/Node dependencies. No rebuild
+was planned in this round; complete real validation would require a new
+disposable project after authorization for revalidation/rebuild.
 
-### Implementação da comparação independente
+### Independent comparison implementation
 
-O schema do estágio build continua sendo comparado como JSON com o artefato
-esperado. Depois, `compare_types` lê os bytes do arquivo efetivamente copiado
-do build e chama `generate_reference`. Essa referência usa somente o contrato
-recebido por --schema, proveniente do download da execução corrente. Não lê nem
-copia o generated.d.ts do build como entrada.
+The build-stage schema is still compared as JSON with the expected artifact.
+Then `compare_types` reads bytes from the file actually copied out of the build
+and calls `generate_reference`. That reference uses only the contract supplied
+by --schema, downloaded from the current run. It does not read or copy the
+build's generated.d.ts as input.
 
-A geração é executada em um novo container da imagem frontend-build já carregada
-pelo job; --pull never impede buscar outra imagem implicitamente. O processo usa
-usuário node, network none, filesystem somente leitura,
-cap_drop ALL, no-new-privileges, limite de 64 processos, 512 MiB e uma CPU.
-Somente /tmp é gravável por tmpfs de 64 MiB com noexec/nosuid. Não há publicação
-de portas, bind mounts, socket Docker ou encaminhamento de variáveis de ambiente
-do host. O payload contendo contrato e hashes esperados chega por stdin; não é
-incluído na linha de comando nem impresso.
+Generation runs in a new container from the frontend-build image already loaded
+by the job; --pull never prevents implicitly fetching another image. The process
+uses user node, network none, read-only filesystem, cap_drop ALL,
+no-new-privileges, a 64-process limit, 512 MiB, and one CPU. Only /tmp is writable,
+through a 64 MiB noexec/nosuid tmpfs. No published ports, bind mounts, Docker
+socket, or forwarded host environment variables. A payload containing the
+contract and expected hashes arrives over stdin, not command arguments or logs.
 
-Dentro do container são verificados hashes SHA-256 do gerador e package-lock.json
-contra o checkout atual e a versão instalada de openapi-typescript contra a versão
-exata declarada/travada. O lock precisa conter integrity e o package.json precisa
-declarar a mesma versão exata, sem range. O script existente é copiado para um
-workspace novo em /tmp e usa, por symlink, somente as dependências instaladas por
-npm ci no estágio build. O processo filho recebe exclusivamente OPENAPI_SCHEMA_FILE
-apontando para uma cópia do contrato esperado. Executa o mesmo generate-api.mjs,
-com opções e cabeçalho idênticos, e grava um arquivo novo nesse workspace.
+Inside the container, SHA-256 hashes of the generator and package-lock.json
+are checked against current checkout, as is the installed openapi-typescript
+version against the exact declared/locked version. The lock must have integrity
+and package.json must declare the same exact version, without a range. The
+existing script is copied into a new /tmp workspace and uses only npm-ci-installed
+build-stage dependencies through a symlink. The child process receives only
+OPENAPI_SCHEMA_FILE pointing to a copy of the expected contract. It runs the
+same generate-api.mjs with identical options and header and writes a new file
+in that workspace.
 
-O validador exige igualdade de todos os bytes, sem normalizar espaços, linhas,
-ordem ou cabeçalho. Tipos ausentes, vazios ou apenas whitespace, referência vazia,
-falha/timeout de geração e divergência do schema reprovam. Em sucesso, o relatório
-registra types.built_sha256, types.reference_sha256, generator_version,
-generator_source_sha256 e lockfile_sha256. Divergências geram diagnóstico limitado
-a hashes e mensagem fixa, sem diff ou conteúdo dos arquivos.
+The validator requires every byte to match, without normalizing spaces, lines,
+order, or header. Missing, empty, or whitespace-only types, an empty reference,
+generation failure/timeout, and schema divergence fail. On success, the report
+records types.built_sha256, types.reference_sha256, generator_version,
+generator_source_sha256, and lockfile_sha256. Divergence produces a diagnosis
+limited to hashes and a fixed message, with no file diff or content.
 
-Saída e stderr do processo de referência são capturados. Falhas imprimem somente
-código/timeout e hashes dos streams; a exceção original mantém sua identidade e
-código numérico, com cmd sanitizado para evitar traceback extenso ou dados de saída.
-O bootstrap preserva o status numérico do gerador filho; sinais usam 128 + sinal.
-O fluxo main e run_cli existente preserva a falha primária mesmo se o cleanup
-também falhar. O container é --rm; seus labels de projeto/serviço/oneoff permitem
-também remoção pelo cleanup com --remove-orphans em caso de interrupção.
+Reference-process stdout/stderr are captured. Failures print only status/timeout
+and stream hashes; the original exception retains identity and numeric code,
+with a sanitized cmd to avoid long tracebacks or output data. Bootstrap
+preserves the child generator's numeric status; signals use 128 + signal.
+Existing main/run_cli flow preserves primary failure even if cleanup also fails.
+The container is --rm; project/service/oneoff labels also allow removal by
+--remove-orphans cleanup after interruption.
 
-### Regressões red-green e comparação funcional
+### Red-green regressions and functional comparison
 
-Antes da correção foram executados os oito testes anteriores e nove regressões
-novas: 17 métodos, sete falhas e um erro, incluindo aceitação de tipos divergentes
-e de conteúdo diferente com o mesmo tamanho. Após a correção, os mesmos 17 testes
-passaram. Foram adicionados mais quatro métodos para isolamento, versão travada,
-diagnósticos, status 17 e timeout: a suíte final possui 21 testes.
+Before the fix, eight prior tests and nine new regressions ran: 17 methods,
+seven failures and one error, including acceptance of divergent types and
+different content of the same size. After the fix, all 17 passed. Four more
+methods covered isolation, pinned version, diagnostics, status 17, and timeout;
+the final suite has 21 tests.
 
-| Cenário obrigatório | Resultado após correção |
+| Required scenario | Result after fix |
 | --- | --- |
-| Schema e tipos corretos | PASS — igualdade integral e hashes iguais |
-| Schema correto, tipos divergentes | PASS — divergência rejeitada |
-| Tipos vazios ou apenas whitespace | PASS — rejeitados |
-| Tipos ausentes | PASS — rejeitados |
-| Falha na geração da referência | PASS — código 17 preservado |
-| Referência vazia ou timeout | PASS — falha, sem sucesso acidental |
-| Schema divergente | PASS — rejeitado antes da referência |
-| Mesmo tamanho, conteúdo diferente | PASS — rejeitado |
-| Credencial sintética em tipos/stdout/stderr | PASS — conteúdo não aparece no diagnóstico |
-| Falha primária 17 e cleanup 23 | PASS — primária preservada; secundária registrada |
-| Versão declarada flutuante/inconsistente | PASS — rejeitada antes de executar Docker |
+| Correct schema and types | PASS — full equality and equal hashes |
+| Correct schema, divergent types | PASS — divergence rejected |
+| Empty or whitespace-only types | PASS — rejected |
+| Missing types | PASS — rejected |
+| Reference generation failure | PASS — code 17 preserved |
+| Empty reference or timeout | PASS — failure without accidental success |
+| Divergent schema | PASS — rejected before reference generation |
+| Same size, different content | PASS — rejected |
+| Synthetic credential in types/stdout/stderr | PASS — content absent from diagnosis |
+| Primary failure 17 and cleanup 23 | PASS — primary preserved, secondary logged |
+| Floating/inconsistent declared version | PASS — rejected before Docker execution |
 
-Também houve validação funcional do mesmo bootstrap JavaScript fora do Docker,
-em workspace temporário, com Node v24.18.1 e openapi-typescript 7.13.0 já instalados
-na cópia temporária anterior; nenhuma dependência global foi instalada. O contrato
-local e um arquivo gerado existente dessa cópia frontend foram usados para testar
-a geração independente de referência. Isso não é apresentado como comparação
-contra uma imagem Docker nesta rodada.
+The same JavaScript bootstrap was also functionally validated outside Docker in
+a temporary workspace, using Node v24.18.1 and openapi-typescript 7.13.0 already
+installed in the prior temporary copy; no global dependency was installed.
+A local contract and existing generated file in that frontend copy were used
+to test independent reference generation. This is not presented as comparison
+against a Docker image in this round.
 
-Resultado: 19.275 bytes em ambos os arquivos e SHA-256
-`266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34` igual para
-referência e arquivo comparado. Uma alteração de um byte, sem mudar o tamanho,
-foi rejeitada. O bootstrap real também rejeitou hash de fonte e versão instalada
-incompatíveis; um gerador sintético encerrado com 17 preservou 17, sem expor
-seu stderr sensível. Esses testes usaram somente arquivos novos em /tmp e leitura
-das dependências já existentes, sem alterar a cópia frontend original.
+Result: 19.275 bytes in both files and matching SHA-256
+`266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34` for
+reference and compared file. A one-byte change without size change was rejected.
+The real bootstrap also rejected incompatible source hash and installed version;
+a synthetic generator exiting 17 preserved 17 without exposing sensitive
+stderr. These tests used only new /tmp files and read existing dependencies,
+without changing the original frontend copy.
 
-Hashes verificados na estratégia de referência:
+Hashes verified for the reference strategy:
 
-- Gerador: `a29f3652005928fe95be121be7edc6d232741db21c213701057e190dc97620b3`.
+- Generator: `a29f3652005928fe95be121be7edc6d232741db21c213701057e190dc97620b3`.
 - Lockfile: `bf4985cb153daee0f826e53223554511d3a155e42e32200467bfa92983eadc61`.
 
-| Validação final desta correção | Resultado |
+| Final validation of this fix | Result |
 | --- | --- |
-| Testes do inspetor/contrato/processo de referência | PASS — 21 testes |
-| Lifecycle e propagação existentes | PASS — 22 testes |
-| Gerador real e comparação funcional fora do Docker | PASS |
-| Ruff check e formatação | PASS |
-| actionlint e ShellCheck | PASS |
-| git diff --check, incluindo arquivos novos | PASS |
-| ci-required | PASS — dez dependências e seis cenários representativos |
-| Comparação efetiva contra estágio Docker frontend | NOT RUN — imagem build removida pelo cleanup anterior |
-| Reconstrução Docker e GitHub Actions | NOT RUN — sem execução/publicação autorizada nesta rodada |
+| Inspector/contract/reference-process tests | PASS — 21 tests |
+| Existing lifecycle and propagation | PASS — 22 tests |
+| Real generator and functional comparison outside Docker | PASS |
+| Ruff check and format | PASS |
+| actionlint and ShellCheck | PASS |
+| git diff --check, including new files | PASS |
+| ci-required | PASS — ten dependencies and six representative scenarios |
+| Actual comparison against Docker frontend stage | NOT RUN — build image removed by prior cleanup |
+| Docker rebuild and GitHub Actions | NOT RUN — no authorized execution/publication in this round |
 
-Evidências: `/tmp/infrapulse-e-types-ipnfx1me/red.log`, `green.log`,
-`final-tests.log`, `functional-node.json`, manifesto inicial `before.json` e
-consulta Brain `brain-status.json`. A matriz do agregador inclui sucesso, vazio,
-failure/cancelled/skipped de docker-build e falha do contrato com dependentes
-pulados; não substitui a matriz exaustiva inicial, cujo código permanece igual.
+Evidence: `/tmp/infrapulse-e-types-ipnfx1me/red.log`, `green.log`,
+`final-tests.log`, `functional-node.json`, initial `before.json` manifest,
+and Brain query `brain-status.json`. Aggregator matrix includes success, empty,
+docker-build failure/cancelled/skipped, and contract failure with skipped
+dependents; it does not replace the initial exhaustive matrix, whose code is
+unchanged.
 
-### Limitações, estado e próxima revisão
+### Limitations, status, and next review
 
-Plano de revalidação Docker: sob nova autorização, construir os targets existentes
-em projeto exclusivo, exportar/baixar o contrato atual e executar validate-images
-com a comparação nova, comprovar hashes, smoke e cleanup; após revisão e autorização
-de versionamento, executar os onze jobs no GitHub Actions. Não reutilizar schema,
-tipos ou artefatos de outra execução como referência. O helper de referência e
-seu cleanup Docker ainda precisam dessa comprovação no ambiente real.
+Docker revalidation plan: with renewed authorization, build existing targets in
+an exclusive project, export/download the current contract, run validate-images
+with new comparison, and verify hashes, smoke, and cleanup; after review and
+authorization for versioning, run the eleven jobs in GitHub Actions. Do not
+reuse another run's schema, types, or artifacts as reference. The reference
+helper and its Docker cleanup still require proof in the real environment.
 
-Somente scripts/validate-images.py, scripts/test_image_validation.py e este relatório
-mudaram em relação ao início desta correção. Hashes confirmam workflow e Compose
-da Fase E intactos; Dockerfiles, Dockerignores, aplicação, contratos e SSRF não
-foram alterados. Permanecem os cinco arquivos pendentes originais, sem staging,
-commit ou push, na branch e HEAD esperados. Entire habilitado, doctor sem problemas
-nos hooks ou sessões presas e um checkpoint anterior pendente; sem repair,
-sincronização forçada ou checkpoint manual.
+Only scripts/validate-images.py, scripts/test_image_validation.py, and this
+report changed since the start of this fix. Hashes confirmed the Phase E
+workflow and Compose unchanged; Dockerfiles, Dockerignores, application,
+contracts, and SSRF were not modified. The original five pending files remained,
+without staging, commit, or push, on expected branch and HEAD. Entire was
+enabled, doctor reported no hook or stuck-session problem and one prior pending
+checkpoint; no repair, forced sync, or manual checkpoint.
 
-A comparação estrita pode reprovar mudanças futuras no gerador/lock por diferença
-real de saída; os hashes e a versão deixam a causa verificável sem publicar conteúdo.
-Os demais riscos de imagens-base, permissões e inspeção por padrões continuam
-documentados acima. Recomenda-se retomar a revisão local e autorizar a revalidação
-Docker antes do versionamento. Fase E continua sem aprovação remota; Fase F não
-foi iniciada.
+Strict comparison may reject future generator/lock changes due to real output
+differences; hashes and version make the cause checkable without publishing
+content. Other base-image, permission, and pattern-inspection risks remain
+as documented above. Recommendation: resume local review and authorize Docker
+revalidation before versioning. Phase E remains without remote approval;
+Phase F was not started.
 
-## Revalidação Docker autorizada após a correção OpenAPI
+## Authorized Docker revalidation after the OpenAPI fix
 
-Esta seção registra a execução real posterior à correção, substituindo a limitação
-Docker NOT RUN da rodada anterior. GitHub Actions continua **NOT RUN** para E.
-Branch develop e HEAD `fd275524a8690147d77382287225c70e78e93488` preservados;
-somente os cinco arquivos previstos da Fase E estavam pendentes no início.
-Workflow e Compose foram conferidos por hash e não foram alterados nesta rodada.
-Também foram inspecionadas as diferenças dos dois validadores e o lifecycle de
-ownership, propagação de erros e cleanup reutilizado da D2.
+This section records the real run after the fix, superseding the previous
+round's Docker NOT RUN limitation. GitHub Actions remains **NOT RUN** for E.
+Branch develop and HEAD `fd275524a8690147d77382287225c70e78e93488` were
+preserved; only the five planned Phase E files were pending initially.
+Workflow and Compose were checked by hash and not changed in this round.
+Differences in the two validators and the D2-reused ownership lifecycle,
+error propagation, and cleanup were also inspected.
 
-### Ambiente, comandos e proveniência
+### Environment, commands, and provenance
 
-Execução em cópia temporária limpa `/tmp/infrapulse-e-docker-l28po9cc`, sem .git,
-.env ou dependências locais. Projeto exclusivo
-`infrapulse-images-e-docker-l28po9cc`, com RUNNER_TEMP apontando para runtime/
-nessa cópia. Antes de criar recursos, foram recusados conflitos de containers,
-redes, volumes, markers e três tags próprias. Foram salvos snapshots dos cinco
-containers, sete redes, quatro volumes e 105 entradas de imagens/tags preexistentes.
+Run in clean temporary copy `/tmp/infrapulse-e-docker-l28po9cc`, without .git,
+.env, or local dependencies. Exclusive project
+`infrapulse-images-e-docker-l28po9cc`, with RUNNER_TEMP pointing to runtime/
+in that copy. Before resource creation, conflicts involving containers,
+networks, volumes, markers, and three owned tags were rejected. Snapshots of
+five containers, seven networks, four volumes, and 105 pre-existing image/tag
+entries were saved.
 
-O exportador foi executado novamente com o Python do backend instalado, lendo
-as fontes copiadas do checkout atual. Backend, gerador, locks, Dockerfiles,
-Dockerignores e exportador coincidem com HEAD; as alterações E não modificam
-contratos. Não foi usado artefato/schema de uma execução anterior. Contrato:
-`fd3c9ec866c776d3ae0e6c50234015bccc6a793e3ae39362d1013029aa9e1a39` (SHA-256).
+The exporter reran with installed backend Python, reading sources copied from
+current checkout. Backend, generator, locks, Dockerfiles, Dockerignores, and
+exporter matched HEAD; Phase E changes did not alter contracts. No prior run's
+artifact/schema was used. Contract SHA-256:
+`fd3c9ec866c776d3ae0e6c50234015bccc6a793e3ae39362d1013029aa9e1a39`.
 
-Comando do validador, com os parâmetros efetivamente utilizados:
+Validator command with parameters actually used:
 
 ```bash
 INFRAPULSE_TEST_PROJECT=infrapulse-images-e-docker-l28po9cc \
@@ -444,15 +441,15 @@ python3 evidence/run-validation.py \
   --report /tmp/infrapulse-e-docker-l28po9cc/evidence/report.json
 ```
 
-O runner temporário em evidence/ carrega o arquivo atual validate-images.py e
-chama seu main por run_cli. Acrescenta apenas observação e um caso negativo à
-comparação: a função original executa primeiro o caso positivo e depois compara
-uma cópia temporária dos tipos com um byte alterado. Não há mocks de operações
-Docker, alteração dos arquivos do validador ou substituição da referência por
-dados simulados. Erros inesperados continuam sendo propagados; somente a exceção
-de divergência esperada do teste negativo é reconhecida como rejeição correta.
+The temporary runner in evidence/ loads the current validate-images.py and calls
+its main through run_cli. It adds only observation and a negative comparison
+case: the original function runs the positive case first, then compares a
+temporary copy of the types with one changed byte. No Docker operations were
+mocked, no validator file was changed, and simulated data did not replace the
+reference. Unexpected errors still propagate; only the expected divergence
+exception in the negative test is recognized as correct rejection.
 
-Builds executados pelo fluxo atual, após Buildx --check nos dois Dockerfiles:
+Builds performed by the current flow, after Buildx --check on both Dockerfiles:
 
 ```bash
 docker buildx build --load --platform linux/amd64 --progress plain \
@@ -466,105 +463,103 @@ docker buildx build --load --platform linux/amd64 --progress plain \
   -t infrapulse-images-e-docker-l28po9cc:frontend -f frontend/Dockerfile .
 ```
 
-Sem login, push, registry de destino ou deploy. Backend construído uma vez para
-API e worker. Os estágios frontend reutilizaram cache; não foi solicitado no-cache
-nem foram removidas imagens-base/cache compartilhados.
+No login, push, destination registry, or deployment. Backend built once for API
+and worker. Frontend stages reused cache; no no-cache build was requested, and
+shared base images/cache were not removed.
 
-### Imagens e comparação real
+### Images and real comparison
 
-| Imagem local temporária | ID observado antes da remoção | Resultado |
+| Temporary local image | ID observed before removal | Result |
 | --- | --- | --- |
-| backend compartilhado | sha256:767b56fb75eb842680c1f14d6dc3bba00f5b2de948c96f77f5076e46d7cc559e | PASS |
-| frontend-build, somente inspeção/gerador | sha256:cfdaea2b5dbeb4aea57f12099489063e88e24a342bc95be09588e3b06ea6f290 | PASS |
+| shared backend | sha256:767b56fb75eb842680c1f14d6dc3bba00f5b2de948c96f77f5076e46d7cc559e | PASS |
+| frontend-build, inspection/generator only | sha256:cfdaea2b5dbeb4aea57f12099489063e88e24a342bc95be09588e3b06ea6f290 | PASS |
 | frontend/Nginx runtime | sha256:550b91aefd9836c4343a0174ddcdec5a5813d83683a9e5b4ab76784441e2462d | PASS |
 
-Os dois runtimes são linux/amd64, usuários app/101, com os CMDs/entrypoint e portas
-declaradas esperados. Foram inspecionados novamente rootfs, histórico, permissões,
-variáveis embutidas e 24 layers de runtime. Backend mantém 42 arquivos residuais
-de empacotamento; não há pytest/Ruff/mypy/httpx instalados e pip check passou.
-Frontend mantém somente runtime Nginx/estáticos, sem Node, Python ou workspace.
+Both runtimes are linux/amd64, with app/101 users, expected CMDs/entrypoint,
+and declared ports. Rootfs, history, permissions, embedded variables, and 24
+runtime layers were inspected again. Backend still has 42 packaging residue
+files, no installed pytest/Ruff/mypy/httpx, and a passing pip check. Frontend
+contains only Nginx runtime/static files, without Node, Python, or workspace.
 
-O generated.d.ts foi realmente copiado do container criado a partir do target
-frontend-build. A referência foi gerada duas vezes em novos containers Node
-(positivo e negativo), a partir do contrato esperado por stdin, com
-openapi-typescript 7.13.0 e os hashes de fonte/lock já documentados. Não foi lido
-ou copiado o arquivo do build como referência. Source e lock da imagem foram
-validados contra o checkout; geração em workspace novo, com usuário node, sem
-rede, sem mounts do host, rootfs somente leitura e escrita em tmpfs limitada.
+The actual generated.d.ts was copied from a container created from the
+frontend-build target. The reference was generated twice in new Node containers
+(positive and negative), from the expected contract over stdin, with
+openapi-typescript 7.13.0 and documented source/lock hashes. The build file
+was neither read nor copied as the reference. Image source and lock were
+validated against checkout; generation used a new workspace as user node,
+without network or host mounts, with read-only rootfs and limited tmpfs writes.
 
-| Evidência | Resultado |
+| Evidence | Result |
 | --- | --- |
-| generated.d.ts extraído | 19.275 bytes |
-| SHA-256 do arquivo do build | 266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34 |
-| SHA-256 da referência independente | 266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34 |
-| Comparação byte a byte | PASS — igualdade integral |
-| Cópia sintética de mesmo tamanho | REJECTED — somente um byte alterado |
-| SHA-256 da cópia divergente | 49d6acf69160e3268630bae8894b34ee539f86b2aa67bbe1a3a88c6896db08e1 |
+| Extracted generated.d.ts | 19.275 bytes |
+| Build file SHA-256 | 266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34 |
+| Independent reference SHA-256 | 266c0ab32f554ed5d591a351c1f5c8183bc345d01af50d0361b959f666ed9c34 |
+| Byte-for-byte comparison | PASS — full equality |
+| Same-size synthetic copy | REJECTED — one byte changed |
+| Divergent copy SHA-256 | 49d6acf69160e3268630bae8894b34ee539f86b2aa67bbe1a3a88c6896db08e1 |
 
-O arquivo original permaneceu inalterado depois do caso negativo. O comparador
-real lançou ValueError com os hashes distintos e mensagem fixa, sem expor os tipos.
-Resultado final do fluxo: exit code 0 após a igualdade positiva, rejeição negativa,
-inspeções, smoke e cleanup. A rejeição sintética é uma condição esperada do teste;
-nenhuma falha inesperada foi convertida em sucesso. Os testes unitários voltaram
-a comprovar status primário 17 preservado diante de cleanup 23 e diagnósticos seguros.
+The original file remained unchanged after the negative case. The real comparator
+raised ValueError with distinct hashes and a fixed message, without exposing
+types. Final flow result: exit code 0 after positive equality, negative rejection,
+inspections, smoke, and cleanup. Synthetic rejection is an expected test
+condition; no unexpected failure was turned into success. Unit tests again
+proved preservation of primary status 17 despite cleanup 23 and safe diagnostics.
 
-### Smoke, cleanup e controles complementares
+### Smoke, cleanup, and complementary controls
 
-| Verificação executada | Resultado |
+| Check performed | Result |
 | --- | --- |
-| API /health | PASS — 200/healthy, processo não root |
-| API /ready sem banco | PASS — exatamente 503/not_ready |
+| API /health | PASS — 200/healthy, non-root process |
+| API /ready without database | PASS — exactly 503/not_ready |
 | Worker startup | PASS — worker_started |
-| Worker heartbeat sem banco | PASS — healthcheck retorna exatamente 1 |
-| Worker SIGTERM | PASS — worker_stopped e scheduler_stopped; exit code 0 |
-| Nginx configuração | PASS — nginx -t |
-| Frontend estáticos e healthcheck | PASS — index/assets servidos e healthy |
-| Processos API/worker/frontend ao encerrar | PASS — exit code 0 |
-| Runtime permissions/isolation | PASS — read_only, network none, sem privilégios, sem portas/binds |
-| Inspeção real de runtime/layers e comparação de tipos | PASS |
-| 21 testes do inspetor | PASS — 0,059 s |
-| 22 testes de lifecycle/propagação | PASS — 2,369 s |
-| Ruff check e format --check | PASS — nove scripts formatados |
-| actionlint, ShellCheck e git diff --check | PASS |
-| Dez dependências de ci-required | PASS — seis cenários representativos preservados |
-| Cleanup e recursos preexistentes | PASS |
-| GitHub Actions E | NOT RUN — sem versionamento nesta rodada |
+| Worker heartbeat without database | PASS — health check returns exactly 1 |
+| Worker SIGTERM | PASS — worker_stopped and scheduler_stopped; exit code 0 |
+| Nginx configuration | PASS — nginx -t |
+| Frontend static files and health check | PASS — index/assets served and healthy |
+| API/worker/frontend processes on exit | PASS — exit code 0 |
+| Runtime permissions/isolation | PASS — read_only, network none, no privileges, ports, or binds |
+| Real runtime/layer inspection and type comparison | PASS |
+| 21 inspector tests | PASS — 0,059 s |
+| 22 lifecycle/propagation tests | PASS — 2,369 s |
+| Ruff check and format --check | PASS — nine formatted scripts |
+| actionlint, ShellCheck, and git diff --check | PASS |
+| Ten ci-required dependencies | PASS — six representative scenarios preserved |
+| Cleanup and pre-existing resources | PASS |
+| E GitHub Actions | NOT RUN — no versioning in this round |
 
-Cleanup comprovado por consultas depois da execução: nenhum container, rede ou
-volume com label do projeto; os dois containers de referência --rm ausentes;
-três tags próprias e markers ausentes. Os cinco containers anteriores conservam
-IDs, StartedAt, RestartCount e estado; as sete redes, quatro volumes e todas as
-105 imagens/tags anteriores permanecem iguais. Após cleanup há novamente 105
-entradas de imagens/tags. Não houve prune, mounts de volumes anteriores, migrações,
-alterações de firewall ou acesso a banco local: os runtimes estavam sem rede e
-usavam banco fictício em loopback:1 dentro de seus próprios namespaces.
+Post-run queries confirmed cleanup: no project-labeled container, network, or
+volume; both --rm reference containers gone; three owned tags and markers gone.
+The five prior containers retained IDs, StartedAt, RestartCount, and status;
+seven networks, four volumes, and all 105 earlier image/tag entries were
+unchanged. Image/tag count returned to 105. There was no prune, mount of older
+volumes, migration, firewall change, or local database access: runtimes had no
+network and used a fictitious database on loopback:1 in their own namespaces.
 
-Evidências em `/tmp/infrapulse-e-docker-l28po9cc/evidence/`:
+Evidence in `/tmp/infrapulse-e-docker-l28po9cc/evidence/`:
 `before-resources.json`, `after-resources.json`, `before-source.json`,
 `openapi.json`, `validation.log`, `report.json`, `type-comparison.json`,
-`inspector-tests.log`, `lifecycle-tests.log` e o runner de observação temporário.
-Relatórios JSON sanitizados inspecionados: somente hashes/metadados e nomes de
-variáveis, sem valores de ambiente, arquivos de tipos ou credenciais. Não foram
-encontrados padrões de secrets pelos controles executados; isso não é uma auditoria
-universal de dados sensíveis. Buildx --check informou no warnings found para ambos
-os Dockerfiles. Etapas em cache não representam uma reinstalação sem cache.
+`inspector-tests.log`, `lifecycle-tests.log`, and the temporary observation runner.
+Inspected sanitized JSON reports contained only hashes/metadata and variable
+names, without environment values, type files, or credentials. Implemented
+checks found no secret patterns; this is not a universal sensitive-data audit.
+Buildx --check reported no warnings found for both Dockerfiles. Cached steps
+do not represent a fresh, cache-free installation.
 
-### Estado e recomendação após a revalidação
+### Status and recommendation after revalidation
 
-Somente este relatório foi atualizado nesta rodada. Manifesto SHA-256 confirmou
-que os cinco arquivos executados eram os atuais antes dessa atualização; os quatro
-arquivos de workflow/Compose/validadores permanecem idênticos ao início da rodada.
-Branch e HEAD preservados, nenhum staging, commit ou push. Entire doctor sem
-falhas nos hooks ou sessões presas, status habilitado e um checkpoint anterior
-pendente; Brain consultado somente em leitura. Não houve repair, sincronização
-forçada, checkpoint manual ou mudança de configuração.
+Only this report was updated in this round. A SHA-256 manifest confirmed that
+the five executed files were current before this documentation update; the four
+workflow/Compose/validator files matched the round's start. Branch and HEAD
+preserved; no staging, commit, or push. Entire doctor found no hook failures or
+stuck sessions, status enabled with one prior pending checkpoint; Brain was
+read-only. No repair, forced sync, manual checkpoint, or configuration change.
 
-Limitações remanescentes: suporte/comportamento do runner hospedado e o workflow
-E completo ainda precisam de execução real no GitHub Actions; tags-base mutáveis,
-resíduos backend e permissões Nginx descritos anteriormente continuam iguais.
-Cache de build foi preservado. A inspeção por padrões não equivale a scanner de
-CVEs ou garantia universal de ausência de secrets. Fase F não foi iniciada.
+Remaining limitations: hosted-runner behavior/support and the full E workflow
+still need an actual GitHub Actions run; mutable base tags, backend residue,
+and Nginx permissions described above remain. Build cache was preserved.
+Pattern inspection is neither a CVE scanner nor a universal absence-of-secrets
+guarantee. Phase F was not started.
 
-Recomendação: revalidação Docker local satisfatória; pronta para revisão final
-de versionamento e nova autorização de commit/push. Não considerar a Fase E
-remotamente aprovada antes dos dez jobs de validação e ci-required passarem.
+Recommendation: local Docker revalidation satisfactory; ready for final
+versioning review and renewed commit/push authorization. Do not consider
+Phase E remotely approved until all ten validation jobs and ci-required pass.

@@ -1,40 +1,40 @@
-# F3C.4.2D — reconciliação preliminar de pacotes OCI
+# F3C.4.2D — Preliminary OCI package reconciliation
 
-O comparador registra diferenças exatas entre coordenadas (ecossistema, namespace,
-nome, versão e arquitetura) de duas fontes distintas, vinculadas a ID de imagem e
-plataforma esperados pelo chamador. Diferenças de versão aparecem dos dois lados;
-elementos não suportados e lacunas explícitas são reportados. Dados duplicados,
-inválidos, fora de escopo ou dos limites são rejeitados. O resultado permanece
-`COVERAGE_PARTIAL`, inclusive quando os inventários coincidem.
+The comparator records exact differences between coordinates (ecosystem, namespace,
+name, version, and architecture) from two distinct sources, bound to the image ID and
+platform expected by the caller. Version differences appear on both sides;
+unsupported elements and explicit gaps are reported. Duplicate, invalid,
+out-of-scope, or over-limit data is rejected. The result remains
+`COVERAGE_PARTIAL`, even when inventories match.
 
-Os adaptadores leem `var/lib/dpkg/status`, `lib/apk/db/installed` e arquivos
-explícitos `site-packages/*.dist-info/METADATA` e `node_modules/*/package.json`
-das camadas OCI validadas em
-memória; não seguem symlinks no host. O leitor PyPI normaliza nomes e aceita um
-perfil restrito de versões. Purl Trivy suporta perfis restritos Debian, Alpine e
-PyPI e npm; `arch`, `distro` e `epoch` conhecidos são preservados ou comparados com o
-distro esperado. Qualificadores e formatos não suportados são lacunas. Diretórios
-implícitos, arquivos não reconhecidos, bundles npm, outros bancos e instalações alternativas
-não são cobertos. A ausência de entradas não demonstra inexistência de pacotes.
+The adapters read `var/lib/dpkg/status`, `lib/apk/db/installed`, and explicit
+`site-packages/*.dist-info/METADATA` and `node_modules/*/package.json` files
+from validated OCI layers in memory; they do not follow host symlinks. The PyPI
+reader normalizes names and accepts a restricted version profile. Trivy purls
+support restricted Debian, Alpine, PyPI, and npm profiles; known `arch`, `distro`,
+and `epoch` values are preserved or compared with the expected distribution.
+Unsupported qualifiers and formats are gaps. Implicit directories, unrecognized
+files, npm bundles, other databases, and alternative installations are not covered.
+The absence of entries does not establish that packages do not exist.
 
-O SBOM passa por hash esperado, schema CycloneDX 1.7 fixado, metadados de versão
-Trivy, grafo e identidade da imagem. Os hashes, descritores, ordem das camadas,
-nome lógico, ID, distro e plataforma esperados devem vir de fontes independentes.
-Identificadores distintos não provam independência; a verificação por hash e a
-identidade do root não autenticam o produtor nem vinculam a plataforma.
+The SBOM is checked against an expected hash, the pinned CycloneDX 1.7 schema,
+Trivy version metadata, graph, and image identity. Expected hashes, descriptors,
+layer order, logical name, ID, distribution, and platform must come from
+independent sources. Distinct identifiers do not prove independence; hash checks
+and root identity do not authenticate the producer or bind the platform.
 
-Para integrar com confiança, a proposta é verificar a assinatura do pacote de
-evidências com o verificador Cosign existente e uma chave/política fixada por
-canal independente, verificar os hashes e comparar integralmente os statements;
-obter plataforma de config/manifest OCI autenticados e confrontá-la com o escopo
-esperado. Uma chave temporária ou manifesto não assinado comprova apenas a
-integridade no escopo descrito, não a identidade do builder nem nível SLSA. Essa
-ligação autenticada e a integração ao verificador ainda não foram implementadas.
+For trusted integration, the proposal is to verify the evidence package signature
+with the existing Cosign verifier and a key/policy pinned through an independent
+channel, verify hashes, and compare the full statements; obtain the platform from
+authenticated OCI config/manifest data and compare it with the expected scope.
+An ephemeral key or unsigned manifest establishes only integrity within the
+described scope, not builder identity or a SLSA level. That authenticated link
+and integration with the verifier have not yet been implemented.
 
-Foram inspecionados SBOMs históricos preservados da execução 41238810850. Eles
-exercitam `distro`, `epoch`, versões Alpine com underscore e PyPI. Esses arquivos
-são evidência de compatibilidade, não uma fonte independente de autenticidade.
-As imagens reais têm camadas acima dos limites do leitor USTAR atual, portanto
-não foram reconstruídas nesta validação. Permanecem pendentes fixtures derivadas
-de camadas reais dentro dos limites, suporte ampliado, autenticação da origem,
-vínculo independente de plataforma e revisão de segurança.
+Preserved historical SBOMs from run 41238810850 were inspected. They exercise
+`distro`, `epoch`, Alpine versions with underscores, and PyPI. These files are
+compatibility evidence, not an independent source of authenticity. The real
+images have layers above the current USTAR reader limits, so they were not
+reconstructed in this validation. Pending work includes fixtures derived from
+real layers within limits, broader support, source authentication, independent
+platform binding, and security review.

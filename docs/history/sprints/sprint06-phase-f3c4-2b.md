@@ -1,19 +1,19 @@
-# F3C.4.2B — reconstrução virtual OCI
+# F3C.4.2B — Virtual OCI reconstruction
 
-`reconstruct_rootfs` aplica camadas USTAR não comprimidas validadas em memória,
-sem extração ou resolução de symlinks no sistema operacional. O chamador deve
-validar independentemente o manifesto, os descritores e a ordem das camadas;
-os limites e verificações de digest do leitor continuam obrigatórios.
+`reconstruct_rootfs` applies validated, uncompressed USTAR layers in memory,
+without extracting or resolving symlinks in the operating system. The caller must
+independently validate the manifest, descriptors, and layer order; the reader's
+limits and digest checks remain mandatory.
 
-Whiteouts comuns e diretórios opacos removem apenas entradas de camadas inferiores,
-antes de processar as entradas da camada corrente, independentemente da ordem
-TAR. Diretórios implícitos são permitidos; percorrer um arquivo ou symlink como
-diretório falha. Hardlinks apontam apenas para arquivos regulares já disponíveis,
-inclusive hardlinks anteriores, e preservam sua identidade após substituições.
-Referências futuras, ciclos, escapes e tipos não suportados são rejeitados. A saída
-é ordenada por caminho e guarda a camada e o caminho de origem do conteúdo; não
-expõe conteúdo nem constitui um inventário de arquivos.
+Ordinary whiteouts and opaque directories remove only entries from lower layers
+before entries in the current layer are processed, regardless of TAR order.
+Implicit directories are allowed; traversing a file or symlink as a directory fails.
+Hardlinks target only regular files already available, including earlier hardlinks,
+and preserve their identity after replacements. Forward references, cycles,
+escapes, and unsupported types are rejected. Output is sorted by path and records
+the layer and source path of the content; it neither exposes contents nor
+constitutes a file inventory.
 
-Esta etapa não prova autenticidade do manifesto ou do builder, nem completude
-do SBOM. A cobertura continua `COVERAGE_PARTIAL`. Inventário, reconciliação e
-integração operacional permanecem para etapas posteriores.
+This stage does not prove authenticity of the manifest or builder, or completeness
+of the SBOM. Coverage remains `COVERAGE_PARTIAL`. Inventory, reconciliation, and
+operational integration remain for later stages.

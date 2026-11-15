@@ -1,42 +1,40 @@
-# Integração F3C.3.2 e reconciliação OCI
+# F3C.3.2 integration and OCI reconciliation
 
-`reconcile_f3c3` verifica o pacote F3C.2 e os bundles F3C.3.2 com
-`verify_evidence_with_sboms`, que compartilha a mesma implementação do verificador
-existente. Apenas após a validação das assinaturas, política, materiais, IDs e
-proveniências, entrega à reconciliação os bytes do SBOM mantidos no snapshot
-validado. Substituições posteriores dos arquivos originais não mudam o snapshot.
-A API anterior `verify_evidence` continua retornando somente seu resumo.
+`reconcile_f3c3` verifies the F3C.2 package and F3C.3.2 bundles through
+`verify_evidence_with_sboms`, which shares the existing verifier implementation.
+Only after validating signatures, policy, materials, IDs, and provenance does it
+pass SBOM bytes retained in the validated snapshot to reconciliation. Later
+replacement of the original files does not change that snapshot. The earlier
+`verify_evidence` API still returns only its summary.
 
-O chamador fornece política e hash de política, chave, commit, run, repositório,
-IDs de imagem, plataforma e distro por canais independentes. O verificador
-existente exige handoff, Cosign e Trivy fixados, além de Docker e das imagens
-locais para a validação F3B.1. A reconciliação confirma a configuração e os
-DiffIDs das camadas fornecidas contra o ID da imagem. O perfil atual exige que
-o ID corresponda ao digest da configuração; perfis cujo ID identifica um índice
-OCI são rejeitados, sem fallback. O leitor virtual aceita USTAR, a variante de
-cabeçalho GNU observada e PAX local apenas para `path`/`linkpath`. Limites:
-128 MiB por camada, 256 MiB agregados, 1 MiB por payload PAX e 100.000 entradas.
-Gzip, PAX global, chaves PAX desconhecidas e outras extensões TAR continuam
-rejeitados sem fallback.
+The caller supplies policy and policy hash, key, commit, run, repository, image IDs,
+platform, and distribution through independent channels. The existing verifier
+requires the handoff, pinned Cosign and Trivy, and Docker and local images for
+F3B.1 validation. Reconciliation confirms the supplied configuration and layer
+DiffIDs against the image ID. The current profile requires the ID to match the
+configuration digest; profiles whose ID identifies an OCI index are rejected
+without fallback. The virtual reader accepts USTAR, the observed GNU header
+variant, and local PAX only for `path`/`linkpath`. Limits: 128 MiB per layer,
+256 MiB aggregate, 1 MiB per PAX payload, and 100.000 entries. Gzip, global PAX,
+unknown PAX keys, and other TAR extensions remain rejected without fallback.
 
-O resultado separa a assinatura de chave confiável do relatório de comparação e
-mantém `COVERAGE_PARTIAL`. A assinatura não comprova a identidade do builder,
-a independência das fontes, autenticidade da plataforma obtida fora da imagem
-ou completude. O pacote histórico foi validado com chaves descartáveis cujos
-bundles não foram preservados; esta orquestração ainda não foi executada com
-esses bundles históricos. Os testes locais de orquestração usam mocks para os
-verificadores; o CI também exercita Cosign real com chaves descartáveis e casos
-negativos.
+The result separates the trusted-key signature from the comparison report and
+retains `COVERAGE_PARTIAL`. The signature does not prove builder identity,
+independence of sources, authenticity of a platform obtained outside the image,
+or completeness. The historical package was validated with disposable keys whose
+bundles were not preserved; this orchestration has not yet been run with those
+historical bundles. Local orchestration tests mock the verifiers; CI also exercises
+real Cosign with disposable keys and negative cases.
 
-Os archives preservados do run `41238810850` foram conferidos por SHA-256 contra
-o manifesto do handoff e percorridos até o inventário final sem carregar imagens
-no Docker: backend, 12 camadas, 224.294.912 bytes, 11.095 entradas finais e
-9.228 arquivos com hash; nginx, 12 camadas, 56.756.736 bytes, 2.214 entradas e
-1.264 arquivos com hash. Os hashes dos configs coincidiram com os IDs do
-handoff e todos os DiffIDs com os configs. Isso valida essas imagens e os
-formatos observados, sem provar identidade do builder ou cobertura completa.
+Preserved image archives from run `41238810850` were checked by SHA-256 against
+the handoff manifest and traversed to the final inventory without loading images
+into Docker: backend, 12 layers, 224.294.912 bytes, 11.095 final entries, and
+9.228 hashed files; nginx, 12 layers, 56.756.736 bytes, 2.214 entries, and
+1.264 hashed files. Configuration hashes matched the handoff IDs and all DiffIDs
+matched the configurations. This validates these images and observed formats,
+without proving builder identity or complete coverage.
 
-Os archives de imagem do CI retêm por um dia; relatórios sanitizados, por sete
-dias; evidência CI sem assinatura, por 30 dias. A evidência mais longa não inclui
-o handoff de camadas nem bundles F3C.3.2 descartáveis. A cobertura permanece
+CI image archives are retained for one day; sanitized reports for seven days;
+unsigned CI evidence for 30 days. The longer-lived evidence does not include
+the layer handoff or disposable F3C.3.2 bundles. Coverage remains
 `COVERAGE_PARTIAL`.

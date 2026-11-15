@@ -1,87 +1,89 @@
-# Sprint 06 — Fase C: Frontend CI e contrato OpenAPI
+# Sprint 06 — Phase C: Frontend CI and OpenAPI contract
 
-Data: 2026-10-30. Status: implementação local concluída, aguardando revisão.
-GitHub Actions da Fase C: **NOT RUN**. Sem commit ou push nesta fase.
+Date: 2026-10-30. Status: local implementation complete, awaiting review.
+Phase C GitHub Actions: **NOT RUN**. No commit or push in this phase.
 
-## Escopo e estado inicial
+## Scope and initial state
 
-Branch `develop`, HEAD inicial e final esperado
-`bf315771bcf9d6c18a833bc0922aabe1114fac89`; working tree inicialmente limpa.
-Foram lidos `AGENTS.md`, `.entire/agent-guide.md`, workflow, configurações do
-frontend, lock, scripts de geração e testes de regressão. Entire Brain foi
-consultado com `brief` e `recall`; a decisão de gerar tipos do checkout atual foi
-conferida nas fontes e na documentação existente.
+Branch `develop`, initial and expected final HEAD
+`bf315771bcf9d6c18a833bc0922aabe1114fac89`; working tree initially clean.
+Read `AGENTS.md`, `.entire/agent-guide.md`, the workflow, frontend configuration,
+lockfile, generation scripts, and regression tests. Entire Brain was queried
+with `brief` and `recall`; the decision to generate types from the current
+checkout was checked against source and existing documentation.
 
-Arquivos desta fase:
+Files in this phase:
 
-- Modificado `.github/workflows/ci.yml`.
-- Criado `docs/sprint06-phase-c-report.md`.
+- Modified `.github/workflows/ci.yml`.
+- Created `docs/sprint06-phase-c-report.md`.
 
-Não houve alterações em dependências/locks, contratos públicos, lógica de negócio,
-worker, proteção SSRF, testes existentes, migrações, Dockerfiles ou Compose.
-Os jobs `backend-quality` e `backend-unit` permaneceram estruturalmente idênticos
-ao baseline; isso foi conferido comparando o YAML com o conteúdo de `HEAD`.
+Dependencies/locks, public contracts, business logic, worker, SSRF protection,
+existing tests, migrations, Dockerfiles, and Compose were unchanged. The
+`backend-quality` and `backend-unit` jobs remained structurally identical to
+the baseline, verified by comparing YAML against `HEAD`.
 
-## Jobs e dependências
+## Jobs and dependencies
 
-| Job adicionado | Dependências | Função |
+| Added job | Dependencies | Purpose |
 | --- | --- | --- |
-| `api-contract` | Nenhuma | Instala backend, exporta e valida OpenAPI, envia JSON |
-| `frontend-quality` | `api-contract` | Instala frontend, baixa contrato, gera tipos, verifica qualidade |
-| `frontend-tests` | Nenhuma | Vitest/Testing Library/MSW e relatório JUnit |
-| `frontend-build` | `api-contract` | Instala frontend, baixa contrato, gera tipos e build, confere saída |
+| `api-contract` | None | Install backend, export and validate OpenAPI, upload JSON |
+| `frontend-quality` | `api-contract` | Install frontend, download contract, generate types, check quality |
+| `frontend-tests` | None | Vitest/Testing Library/MSW and JUnit report |
+| `frontend-build` | `api-contract` | Install frontend, download contract, generate types and build, check output |
 
-Os quatro jobs usam `ubuntu-24.04` e timeout de 15 minutos. `api-contract` usa
-Python 3.12. Os três jobs frontend usam Node **24.18.1**, igual ao Dockerfile,
-compatível com `engines.node: >=24.15.0 <25` no package.json/lock.
-Ambiente local verificado: Python 3.12.3, Node 24.18.1, npm 11.16.0.
+All four jobs use `ubuntu-24.04` and a 15-minute timeout. `api-contract` uses
+Python 3.12. The three frontend jobs use Node **24.18.1**, matching the Dockerfile
+and compatible with `engines.node: >=24.15.0 <25` in package.json/lock.
+Verified local environment: Python 3.12.3, Node 24.18.1, npm 11.16.0.
 
-O diretório padrão global `backend` foi preservado. Os jobs frontend definem
-`defaults.run.working-directory: frontend`; a exportação usa explicitamente a raiz.
-O nome público `ci-required` permanece estável, com timeout de cinco minutos.
+The global default `backend` working directory was preserved. Frontend jobs set
+`defaults.run.working-directory: frontend`; export explicitly uses the root.
+The public `ci-required` name remains stable, with a five-minute timeout.
 
-## Contrato e artefatos
+## Contract and artifacts
 
-1. Instalação do backend: `python -m pip install -c requirements.lock -e .` em
-   `backend/`, sem o extra de desenvolvimento desnecessário para exportar o schema.
-2. `python -B scripts/export-openapi.py` exporta `app.openapi()` do checkout atual,
-   sem servidor, lifespan, sessão SQL ou banco. Não lê `backend/.env` nesse fluxo.
-3. `fastapi.openapi.models.OpenAPI.model_validate_json` valida a estrutura usando
-   uma dependência existente. O gate também exige OpenAPI 3, paths e component
-   schemas não vazios. Não foi instalado outro validador.
-4. O arquivo `$RUNNER_TEMP/api-contract/openapi.json` é enviado como artefato
-   **`api-contract-openapi`**, com nome estável e retenção de sete dias.
-5. Qualidade e build baixam esse nome usando o contexto padrão da action:
-   mesmo repositório e **mesma execução**, sem token explícito ou seleção de outro
-   run. O contrato não entra em cache. Um checkout novo sempre o exporta novamente.
-6. `OPENAPI_SCHEMA_FILE` é definido nos passos consumidores; assim, o gerador
-   existente lê o arquivo compartilhado. Contrato ausente causa erro, sem fallback
-   para um schema antigo nem tentativa de iniciar API.
+1. Backend installation: `python -m pip install -c requirements.lock -e .` in
+   `backend/`, without the development extra unnecessary for schema export.
+2. `python -B scripts/export-openapi.py` exports `app.openapi()` from the current
+   checkout without server, lifespan, SQL session, or database. It does not read
+   `backend/.env` in this flow.
+3. `fastapi.openapi.models.OpenAPI.model_validate_json` validates structure using
+   an existing dependency. The gate also requires OpenAPI 3, nonempty paths,
+   and nonempty component schemas. No other validator was installed.
+4. `$RUNNER_TEMP/api-contract/openapi.json` is uploaded as the stable-name artifact
+   **`api-contract-openapi`**, retained for seven days.
+5. Quality and build download that name using the action's default context:
+   the same repository and **same run**, without an explicit token or another
+   run selection. The contract is not cached. A fresh checkout exports it again.
+6. `OPENAPI_SCHEMA_FILE` is set in consumer steps, so the existing generator
+   reads the shared file. A missing contract fails without falling back to an
+   old schema or attempting to start the API.
 
-O job de qualidade executa `npm run generate:api`, `npm run typecheck`,
-`npm run lint -- --max-warnings=0` e `npm run format:check`.
-O build usa `npm run build`, que já regenera os tipos, roda typecheck e executa Vite.
-Depois exige `dist/index.html`, JavaScript e CSS não vazios em `dist/assets`.
-O build permanece no runner: não há upload de dist, publicação ou deploy.
+The quality job runs `npm run generate:api`, `npm run typecheck`,
+`npm run lint -- --max-warnings=0`, and `npm run format:check`.
+The build uses `npm run build`, which already regenerates types, runs typecheck,
+and executes Vite. It then requires nonempty `dist/index.html`, JavaScript, and
+CSS in `dist/assets`. Build output stays on the runner: no dist upload,
+publication, or deployment.
 
-`frontend-tests` executa o comando existente com reporters nativos:
+`frontend-tests` runs the existing command with native reporters:
 
 ```bash
 npm test -- --reporter=default --reporter=junit --outputFile=test-results/frontend-unit.xml
 ```
 
-O padrão de inclusão do Vitest permanece `src/**/*.test.{ts,tsx}`. Playwright/E2E
-não é executado. Os testes usam jsdom, Testing Library e MSW; os imports de tipos
-são apagados na transformação e não exigem arquivo gerado previamente.
-O pytest da Fase B e os scripts de negócio não foram modificados.
+Vitest's inclusion pattern remains `src/**/*.test.{ts,tsx}`. Playwright/E2E is
+not run. Tests use jsdom, Testing Library, and MSW; type imports are erased during
+transformation and need no previously generated file. Phase B pytest and
+business scripts were unchanged.
 
-O JUnit é enviado como **`frontend-unit-junit`**, com `always()`, retenção de sete
-dias e erro para arquivo ausente. O Vitest é invocado diretamente pelo npm,
-preservando falhas. Nenhuma opção permite suíte vazia nem mascara erros.
+JUnit is uploaded as **`frontend-unit-junit`**, with `always()`, seven-day
+retention, and failure if the file is missing. Vitest is invoked directly by npm,
+preserving failures. No option permits an empty suite or masks errors.
 
 ## Quality gate
 
-`ci-required` exige exatamente:
+`ci-required` requires exactly:
 
 - `backend-quality`
 - `backend-unit`
@@ -90,134 +92,135 @@ preservando falhas. Nenhuma opção permite suíte vazia nem mascara erros.
 - `frontend-tests`
 - `frontend-build`
 
-O job mantém `if: ${{ always() }}` e o código aprovado na Fase B: exige resultado
-`success` de todas as entradas de `needs`, com pelo menos uma entrada.
-Falhas, cancelamentos e skips nunca são interpretados como aprovação.
+The job retains `if: ${{ always() }}` and the approved Phase B code: it requires
+`success` for every `needs` entry, with at least one entry. Failures,
+cancellations, and skips never count as approval.
 
-Foi executado o bloco Python exato do agregador nas **4.096 combinações** de
-`success`, `failure`, `cancelled` e `skipped` para os seis jobs: somente a combinação
-com todos em sucesso aprovou. O bloco shell completo também foi executado em três
-cenários: contrato `failure`, `cancelled` ou `skipped`, com `frontend-quality` e
-`frontend-build` em `skipped`. Todos retornaram código 1.
+The exact Python aggregator block ran against **4.096 combinations** of
+`success`, `failure`, `cancelled`, and `skipped` across six jobs: only the all-success
+combination passed. The full shell block also ran in three scenarios with the
+contract `failure`, `cancelled`, or `skipped` and `frontend-quality` and
+`frontend-build` both `skipped`. All returned code 1.
 
-Esses testes validam a lógica local. Agendamento e cancelamento global de runs
-continuam sujeitos ao GitHub; não se afirma que um run cancelado sempre conclua
-o agregador. Esta fase ainda precisa exercitar seu grafo real na plataforma.
+These tests validate local logic. Scheduling and global cancellation remain
+subject to GitHub; a canceled run is not claimed to always complete the
+aggregator. This phase still needs to exercise its actual graph on the platform.
 
-## Validação local executada
+## Local validation performed
 
-Foi criada uma cópia limpa com `git archive HEAD frontend backend scripts` em
-`/tmp/infrapulse-s06c-clean`, sem `.env`, node_modules, dist ou tipos gerados.
-O novo ambiente Python e o novo node_modules ficaram exclusivamente nessa cópia.
-Ambientes locais existentes e containers não foram modificados.
+A clean copy was created with `git archive HEAD frontend backend scripts` at
+`/tmp/infrapulse-s06c-clean`, without `.env`, node_modules, dist, or generated
+types. New Python and node_modules environments stayed in that copy only.
+Existing local environments and containers were unchanged.
 
-Os passos `run` novos foram extraídos do workflow por um helper temporário e
-executados com Bash, `-e` e `pipefail`. O Vitest rodou **antes** da exportação e da
-geração de tipos, comprovando sua independência do contrato e do backend instalado.
+New `run` steps were extracted from the workflow by a temporary helper and
+executed with Bash, `-e`, and `pipefail`. Vitest ran **before** export and type
+generation, proving independence from the contract and installed backend.
 
-| Verificação | Resultado | Evidência |
+| Check | Result | Evidence |
 | --- | --- | --- |
-| Instalação backend somente com dependências declaradas | PASS | Instalação editable com constraints concluída |
-| `npm ci` em checkout limpo | PASS | 370 pacotes adicionados; auditoria incidental reportou zero vulnerabilidades |
-| Exportação e validação OpenAPI | PASS | OpenAPI 3.1.0, 8 paths, 14 schemas, 12.528 bytes |
-| Rejeição de contrato inválido/vazio | PASS | O validador real retorna erro em ambos os casos |
-| Rejeição de arquivo de contrato ausente | PASS | Gerador retorna erro, sem fallback |
-| `npm run generate:api` | PASS | Tipos gerados do arquivo compartilhado |
-| `npm run typecheck` | PASS | TypeScript 5.9.3 sem erros |
+| Backend installation with declared dependencies only | PASS | Editable installation with constraints completed |
+| `npm ci` in a clean checkout | PASS | 370 packages added; incidental audit reported zero vulnerabilities |
+| OpenAPI export and validation | PASS | OpenAPI 3.1.0, 8 paths, 14 schemas, 12.528 bytes |
+| Rejection of invalid/empty contract | PASS | Real validator errors in both cases |
+| Rejection of missing contract file | PASS | Generator errors without fallback |
+| `npm run generate:api` | PASS | Types generated from shared file |
+| `npm run typecheck` | PASS | TypeScript 5.9.3 without errors |
 | `npm run lint -- --max-warnings=0` | PASS | ESLint 10.13.0, zero warnings |
-| `npm run format:check` | PASS | Prettier 3.9.10 aprovou os arquivos |
-| Vitest 5.0.5 | PASS | 26 testes em 10 arquivos, em 4,27 s |
-| JUnit frontend | PASS | 26 casos; zero failures, errors ou skips; XML parseado |
-| Regressões de exclusão | PASS | Cinco casos de DeleteService.race e dois de deletion-state |
-| `npm run build` | PASS | Vite 8.3.5; 1.689 módulos transformados, build em 750 ms |
-| Verificação da saída de produção | PASS | index.html, JS e CSS não vazios; 12 arquivos no dist |
-| Agregador | PASS | 4.096 combinações e três cenários shell com skips dependentes |
-| Estrutura e segurança YAML | PASS | Permissões, SHAs, caches, diretórios, needs, timeouts e artefatos conferidos |
-| Shell | PASS | `bash -n` e ShellCheck em todos os blocos run |
-| actionlint 1.7.12 | PASS | Sem diagnósticos no workflow final |
-| `git diff --check`, incluindo relatório não rastreado | PASS | Sem erros de whitespace |
-| Backend quality/unit nesta fase | NOT RUN | Jobs intactos; validação remota aprovada no baseline da Fase B |
-| GitHub Actions da Fase C | NOT RUN | Sem commit/push autorizado |
-| Playwright, PostgreSQL e stack de observabilidade | NOT RUN | Fora do escopo desta implementação |
+| `npm run format:check` | PASS | Prettier 3.9.10 accepted files |
+| Vitest 5.0.5 | PASS | 26 tests in 10 files, in 4,27 s |
+| Frontend JUnit | PASS | 26 cases; zero failures, errors, or skips; XML parsed |
+| Deletion regressions | PASS | Five DeleteService.race and two deletion-state cases |
+| `npm run build` | PASS | Vite 8.3.5; 1.689 modules transformed, build in 750 ms |
+| Production output check | PASS | Nonempty index.html, JS, and CSS; 12 dist files |
+| Aggregator | PASS | 4.096 combinations and three shell scenarios with dependent skips |
+| YAML structure and security | PASS | Permissions, SHAs, caches, directories, needs, timeouts, and artifacts checked |
+| Shell | PASS | `bash -n` and ShellCheck on all run blocks |
+| actionlint 1.7.12 | PASS | No diagnostics in final workflow |
+| `git diff --check`, including untracked report | PASS | No whitespace errors |
+| Backend quality/unit in this phase | NOT RUN | Jobs unchanged; remote validation approved in Phase B baseline |
+| Phase C GitHub Actions | NOT RUN | No authorized commit/push |
+| Playwright, PostgreSQL, and observability stack | NOT RUN | Outside this implementation's scope |
 
-Nenhuma verificação local final ficou em FAIL ou BLOCKED. Não foi necessário
-alterar configuração do frontend ou instalar novas ferramentas npm.
-O aviso do npm sobre versão 12.2.1 disponível foi registrado, sem atualizar o npm.
+No final local check remained FAIL or BLOCKED. Frontend configuration did not
+need changes, and no new npm tools were installed. npm's notice that version
+12.2.1 was available was recorded without updating npm.
 
-Regressões existentes cobertas: nenhuma consulta de status após DELETE durante
-revalidação lenta; cancelamento de consulta pendente antes do DELETE; pausa de
-polling/manual refresh sem interromper outros serviços; cancelamento do diálogo;
-falha do DELETE com retomada e retry; navegação antes da revalidação com nova visita
-recebendo 404; invariantes de cache/paginação/filtros e isolamento entre QueryClients.
+Existing regressions covered: no status query after DELETE during slow
+revalidation; cancellation of a pending query before DELETE; pausing polling or
+manual refresh without interrupting other services; canceling the dialog;
+DELETE failure with resumption and retry; navigation before revalidation with a
+new visit receiving 404; cache/pagination/filter invariants and isolation
+between QueryClients.
 
-Evidências temporárias, fora do Git:
+Temporary evidence, outside Git:
 
-- `/tmp/infrapulse-s06c-clean/evidence/summary.json` e logs dos passos.
+- `/tmp/infrapulse-s06c-clean/evidence/summary.json` and step logs.
 - `/tmp/infrapulse-s06c-clean/evidence/deletion-regressions.json`.
 - `/tmp/infrapulse-s06c-clean/frontend/test-results/frontend-unit.xml`.
 - `/tmp/infrapulse-s06c-clean/runner-temp/api-contract/openapi.json`.
 - `/tmp/infrapulse-s06c-clean/frontend/dist/`.
 - Helper `/tmp/infrapulse-s06c-validate.py`.
 
-Durante a preparação, o actionlint identificou uso inválido de `runner.temp` no
-env do job. A variável foi movida para env dos passos, onde o contexto é permitido;
-o actionlint final passou. Uma primeira instalação isolada usou o caminho de
-constraints relativo ao diretório errado; foi repetida corretamente e concluída.
+During preparation, actionlint identified invalid use of `runner.temp` in the
+job's env. The variable moved to step env, where that context is allowed; final
+actionlint passed. An initial isolated installation used a constraints path
+relative to the wrong directory; it was repeated correctly and completed.
 
-## Segurança, actions e riscos residuais
+## Security, actions, and residual risks
 
-Permissões globais `contents: read`, checkout sem credenciais persistidas,
-concurrency, triggers e SHAs da Fase B foram preservados. Todos os novos usos de
-actions têm SHA completo, versão legível e timeout no job. Cache npm deriva somente
-do `frontend/package-lock.json`; cache pip considera pyproject e requirements.lock.
-Não há `pull_request_target`, secrets de produção, supressão ampla, continue-on-error
-ou gates com `|| true`.
+Global `contents: read` permissions, checkout without persisted credentials,
+concurrency, triggers, and Phase B SHAs were preserved. Every new action use
+has a full SHA, readable version, and job timeout. npm cache derives only from
+`frontend/package-lock.json`; pip cache considers pyproject and requirements.lock.
+There is no `pull_request_target`, production secret, broad suppression,
+continue-on-error, or gate with `|| true`.
 
-Novas actions, conferidas nas tags e nos manifests oficiais:
+New actions, checked against official tags and manifests:
 
 - [setup-node v7.1.0](https://github.com/actions/setup-node/tree/v7.1.0), SHA
-  `949feb2413d6458794dcd2491c4babbbce0c15c1`, runtime Node.js 24.
+  `949feb2413d6458794dcd2491c4babbbce0c15c1`, Node.js 24 runtime.
 - [download-artifact v8.0.2](https://github.com/actions/download-artifact/tree/v8.0.2), SHA
-  `9000827ccba6bdab643e8b6fd33ac0654aef8333`, runtime Node.js 24; consumo padrão
-  restrito ao run atual e falha padrão para divergência de digest.
+  `9000827ccba6bdab643e8b6fd33ac0654aef8333`, Node.js 24 runtime; default consumption
+  restricted to this run and default failure on digest mismatch.
 
-A [execução aprovada da Fase B](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41048526460)
-registrou warnings de depreciação Node.js 20 para checkout v4.2.2, setup-python
-v5.6.0 e upload-artifact v4.6.2, forçadas pelo runner a Node.js 24 e concluídas com
-sucesso. Seus SHAs não foram atualizados nesta fase: não houve necessidade observada
-de compatibilidade. A manutenção desses pins permanece recomendada em alteração
-separada e autorizada; novos jobs que os usam podem repetir os avisos.
+The [approved Phase B run](https://github.com/jacivaldocarvalho/jc-infrapulse/actions/runs/41048526460)
+recorded Node.js 20 deprecation warnings for checkout v4.2.2, setup-python
+v5.6.0, and upload-artifact v4.6.2, forced by the runner to Node.js 24 and
+completed successfully. Their SHAs were not updated in this phase: no
+compatibility need was observed. Maintaining those pins remains recommended in
+a separate, authorized change; new jobs using them may repeat the warnings.
 
-Foram inspecionados o JSON, o JUnit e os 12 arquivos do build: sem `.env`, symlinks,
-padrões de tokens/chaves privadas, URLs com credenciais ou configuração de senha
-do backend. Os uploads apontam exclusivamente para um JSON ou XML, sem globs,
-árvores inteiras ou diretórios de ambiente. JUnit contém nomes dos testes e
-metadados normais do executor, como hostname; não inclui o ambiente do processo.
-A inspeção por padrões não constitui uma auditoria exaustiva de dados sensíveis.
+The JSON, JUnit, and 12 build files were inspected: no `.env`, symlinks,
+token/private-key patterns, credential-bearing URLs, or backend password
+configuration. Uploads point only to a JSON or XML file, without globs,
+whole trees, or environment directories. JUnit includes test names and normal
+runner metadata such as hostname, not the process environment. Pattern-based
+inspection is not an exhaustive sensitive-data audit.
 
-A validação Pydantic e a geração TypeScript não substituem uma suíte de testes de
-compatibilidade semântica da API. Os schemas continuam originados da aplicação.
-O lock existente do backend não fixa o build backend por versão exata ou hashes;
-essa política não foi ampliada. O npm usa o lock existente sem resolver versões
-arbitrárias; a auditoria incidental não substitui uma fase dedicada de segurança.
+Pydantic validation and TypeScript generation do not replace a semantic API
+compatibility test suite. Schemas still originate from the application. The
+existing backend lock does not pin the build backend by exact version or hashes;
+this policy was not expanded. npm uses the existing lock without resolving
+arbitrary versions; its incidental audit does not replace a dedicated security phase.
 
-Upload/download reais, caches e o grafo dos novos jobs ainda precisam ser verificados
-no GitHub Actions. Nenhuma validação local deste relatório equivale a esse sucesso.
+Actual upload/download, caches, and the new job graph still need verification
+in GitHub Actions. No local check in this report is equivalent to that success.
 
-## Git, Entire e recomendação
+## Git, Entire, and recommendation
 
-Branch `develop`, HEAD preservado em
-`bf315771bcf9d6c18a833bc0922aabe1114fac89`. Mudanças locais restritas ao workflow
-e a este relatório, sem staging, commit ou push. Entire permanece habilitado;
-hooks/configuração não foram alterados e nenhum checkpoint manual foi criado.
-Na inspeção final, Entire indicou um checkpoint pendente de sincronização:
-`01M6694STZ5570RCCN602RFZ96`, o mesmo ID registrado no commit anterior da Fase B,
-sem erro de sincronização informado. Nenhum envio ou reparo foi executado.
-Sem deploy, migrações, comandos Docker, publicação de imagens ou alteração remota.
+Branch `develop`, HEAD preserved at
+`bf315771bcf9d6c18a833bc0922aabe1114fac89`. Local changes limited to the
+workflow and this report, without staging, commit, or push. Entire remains
+enabled; hooks/configuration were unchanged and no manual checkpoint was created.
+At final inspection, Entire indicated a checkpoint pending synchronization:
+`01M6694STZ5570RCCN602RFZ96`, the same ID recorded in the preceding Phase B
+commit, without a reported synchronization error. No upload or repair was run.
+No deployment, migration, Docker command, image publication, or remote change.
 
-Recomendação: pronta para revisão local e posterior autorização para versionamento
-e validação remota. Não considerar a Fase C definitivamente aprovada antes da
-execução bem-sucedida no GitHub Actions. Nenhuma fase posterior foi iniciada.
+Recommendation: ready for local review and later authorization for versioning
+and remote validation. Do not consider Phase C finally approved before a
+successful GitHub Actions run. No later phase was started.
 
-Conventional Commit sugerido, sem executar:
+Suggested Conventional Commit, not executed:
 `ci(frontend): add quality tests build and shared OpenAPI contract gates`.

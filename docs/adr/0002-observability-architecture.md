@@ -1,60 +1,29 @@
-# ADR 0002 — Telemetria operacional isolada por processo
+# ADR 0002 — Process-isolated operational telemetry
 
-Status: aceito para a Sprint 04, conforme arquitetura e ajustes aprovados.
+Status: accepted for Sprint 04, subject to the approved architecture and adjustments.
 
-## Contexto
+## Context
 
-API e worker independentes precisam de RED, saúde do scheduler e traces sem
-introduzir labels por serviço, expor destinos ou alterar o transporte fixado da
-Sprint 03. Exporter acessível não comprova saúde do event loop. Dependências de
-telemetria não podem se tornar dependências de disponibilidade do produto.
+The independent API and worker need RED metrics, scheduler health, and traces without introducing per-service labels, exposing destinations, or changing the pinned transport from Sprint 03. An accessible exporter does not prove event-loop health. Telemetry dependencies must not become product availability dependencies.
 
-## Decisão
+## Decision
 
-Usar prometheus-client com registry e listener HTTP próprios para cada processo.
-Listeners em threads são iniciados/encerrados pelo lifespan da API e pelo worker.
-Não expor `/metrics` na porta funcional. Publicar somente API e Grafana em loopback;
-colocar Prometheus/Collector/Tempo/Alertmanager em rede interna separada do banco.
+Use prometheus-client with a separate registry and HTTP listener for each process. Listener threads start and stop with the API lifespan and worker. Do not expose `/metrics` on the functional port. Publish only the API and Grafana on loopback; place Prometheus, Collector, Tempo, and Alertmanager on an internal network separate from the database.
 
-Instrumentar explicitamente ASGI, scheduler, checker e operações de persistência
-com a API/SDK OpenTelemetry. Não habilitar instrumentação automática de transporte
-ou SQL. Registrar apenas templates de rota, métodos normalizados, status e nomes
-fixos de operação. Não registrar mensagens de exceção, SQL, URLs, cabeçalhos ou
-corpos. Não injetar tracing nos destinos. Recursos identificam papel, versão e
-ambiente; não usam detectores automáticos de ambiente/processo.
+Instrument ASGI, scheduler, checker, and persistence operations explicitly with the OpenTelemetry API/SDK. Do not enable automatic transport or SQL instrumentation. Record only route templates, normalized methods, status codes, and fixed operation names. Do not record exception messages, SQL, URLs, headers, or bodies. Do not inject tracing into monitored destinations. Resources identify role, version, and environment; they do not use automatic environment or process detectors.
 
-Tratar traceparent externo como link de um trace local, sem baggage/tracestate ou
-controle de sampling pelo cliente. Internamente usar propagação de contexto de
-asyncio/to_thread. Emitir logs de acesso sanitizados com correlação trace/span e
-suprimir mensagens brutas de acesso/clientes/exporters.
+Treat an external traceparent as a link to a local trace, without baggage/tracestate or client-controlled sampling. Propagate context internally through asyncio/to_thread. Emit sanitized access logs correlated with trace/span and suppress raw access, client, and exporter messages.
 
-Separar métricas de resultado concluído, commit confirmado, último UP persistido,
-último ciclo saudável e heartbeat do event loop. Preservar heartbeat em arquivo,
-backpressure, concorrência, política SSRF e prazo de espera das tarefas no shutdown.
+Separate metrics for completed results, confirmed commits, the latest persisted UP, the latest healthy cycle, and event-loop heartbeat. Preserve the heartbeat file, backpressure, concurrency, SSRF policy, and task wait deadline during shutdown.
 
-Exportar por OTLP HTTP com fila de 256 spans, lotes de até 64 e processador próprio
-com drenagem limitada a 2s mais uma exportação em curso (timeout máximo 2s).
-A versão instalada do SDK implementa force_flush sem aplicar o timeout recebido;
-um processador explicitamente possuído evita depender desse comportamento para
-o encerramento. Descartar backlog ao esgotar o prazo, encerrando a thread.
+Export through OTLP HTTP with a 256-span queue, batches of up to 64, and an owned processor with a drain limited to 2s plus one in-progress export (maximum timeout 2s). The installed SDK version implements force_flush without applying the supplied timeout; an explicitly owned processor avoids relying on that behavior during shutdown. Discard the backlog when the deadline expires and stop the thread.
 
-Collector aplica memory limiter antes de batch, fila/retry limitados e exporta ao
-Tempo. Persistir Prometheus e Tempo em volumes, provisionar Grafana por arquivos
-e encaminhar alertas para receiver local sem notificações externas.
+The Collector applies a memory limiter before batching, uses bounded queueing and retries, and exports to Tempo. Persist Prometheus and Tempo on volumes, provision Grafana from files, and forward alerts to a local receiver without external notifications.
 
-## Consequências
+## Consequences
 
-Mantemos isolamento e cardinalidade limitada, ao custo de instrumentação manual
-e responsabilidade pelo processador de exportação. Traces são best effort; fila
-cheia, sampling, shutdown ou Collector indisponível podem causar perda. Nenhum
-trace distribuído é enviado a serviços monitorados. Links externos permitem
-correlação sem aceitar o contexto externo como pai de confiança.
+This maintains isolation and limited cardinality at the cost of manual instrumentation and responsibility for the export processor. Traces are best effort; a full queue, sampling, shutdown, or unavailable Collector may cause loss. No distributed trace is sent to monitored services. External links permit correlation without accepting the external context as a trusted parent.
 
-Spans de banco delimitam operações/sessões sem capturar SQL individual. A contagem
-de serviços ativos adiciona uma consulta por ciclo. Quantis Prometheus são
-aproximações por buckets; não são o percentile_cont do histórico PostgreSQL.
+Database spans bound operations and sessions without capturing individual SQL statements. Counting active services adds one query per cycle. Prometheus quantiles are bucket-based approximations; they are not the PostgreSQL history percentile_cont.
 
-Uma instância do worker e um processo por registry continuam sendo limites. A
-stack local não é HA, não inclui retenção automática no PostgreSQL nem logs
-centralizados. Alertmanager recebe/deduplica alertas, mas o receiver padrão não
-notifica pessoas. Detalhes em [observability.md](../operations/observability.md).
+One worker instance and one process per registry remain limits. The local stack is not highly available and has neither automatic PostgreSQL retention nor centralized logs. Alertmanager receives and deduplicates alerts, but its default receiver does not notify people. Details are in [observability.md](../operations/observability.md).
